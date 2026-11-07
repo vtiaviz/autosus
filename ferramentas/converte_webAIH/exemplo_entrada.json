@@ -1,0 +1,47 @@
+[
+  {
+    "apresentacao": "202611",
+    "orgao_emissor": "M999999801",
+    "cnes": "9999999",
+    "municipio": "999999",
+    "numero_aih": "9926100000001",
+    "especialidade": "03",
+    "dt_emissao": "20261103",
+    "dt_internacao": "20261103",
+    "dt_saida": "20261106",
+    "proc_solicitado": "0303140151",
+    "proc_realizado": "0303140151",
+    "carater_internacao": "02",
+    "motivo_saida": "12",
+    "solicitante_doc": "200000000000003",
+    "responsavel_doc": "200000000000003",
+    "diretor_doc": "200000000000003",
+    "autorizador_doc": "100000000000007",
+    "cid_principal": "J189",
+    "paciente_nome": "Paciente de Teste Fictício",
+    "paciente_nascimento": "19800115",
+    "paciente_sexo": "F",
+    "paciente_raca_cor": "03",
+    "paciente_nome_mae": "Mãe de Teste",
+    "paciente_nome_responsavel": "",
+    "paciente_cns": "898000000000002",
+    "end_tipo_logradouro": "081",
+    "end_logradouro": "Rua Exemplo",
+    "end_municipio": "999999",
+    "end_uf": "PA",
+    "end_cep": "68500000",
+    "paciente_telefone": "94900000000",
+    "procedimentos": [
+      {
+        "prof_doc": "200000000000003",
+        "cbo": "225125",
+        "prestador_doc": "9999999",
+        "executante_doc": "9999999",
+        "procedimento": "0303140151",
+        "quantidade": "1",
+        "competencia": "202611"
+      }
+    ],
+    "diagnosticos_secundarios": []
+  }
+]

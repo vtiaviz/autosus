@@ -1,0 +1,117 @@
+# =====================================================================
+#  AutoSUS - configuracao
+#  Placeholders aceitos nos padroes: {competencia} (AAAAMM), {uf}, {municipio}
+#  Os padroes sao expressoes regulares, sem diferenciar maiusculas/minusculas.
+# =====================================================================
+
+# Onde salvar. "AREA_DE_TRABALHO" e trocado pelo caminho real da sua
+# Area de Trabalho (funciona tambem quando ela esta no OneDrive).
+pasta_destino: "AREA_DE_TRABALHO/AutoSUS_Downloads"
+
+# Competencia buscada quando nenhuma e informada: mes anterior ao da execucao.
+competencia: mes_anterior
+
+uf: "15"
+municipio: "150175"
+
+ftp:
+  tentativas: 3          # tentativas por arquivo em caso de queda
+  timeout_segundos: 120
+
+# Programas com versao de 4 digitos: sempre baixa a maior versao publicada.
+programas:
+  - nome: SISAIH01
+    host: ftp2.datasus.gov.br
+    pasta: /public/sistemas/dsweb/SIHD/Programas
+    padrao: '^sisaih01_ver(?P<versao>\d{4})\.exe$'
+  - nome: SIHD2
+    host: ftp2.datasus.gov.br
+    pasta: /public/sistemas/dsweb/SIHD/Programas
+    padrao: '^SIHD2_(?P<versao>\d{4})\.exe$'
+
+  - nome: FPO
+    host: arpoador.datasus.gov.br
+    pasta: /siasus/fpo
+    padrao: '^FPOMAG_Atualiza_(?P<versao>\d{4})\.exe$'
+
+# Programas publicados em pagina web: pega o link da maior versao.
+# links_extras: enderecos conhecidos, usados tambem se a pagina mudar.
+programas_http:
+  - nome: TRANSMISSOR
+    pagina: 'http://transmissor.datasus.gov.br/transmissor.php?area=5525A1B0C0D0E0F5525G1HIJd0L2M0N&VInclude=../site/texto.php'
+    padrao: '^Transmissor(?P<versao>\d+)\.exe$'
+    links_extras:
+      - 'http://200.214.44.204/Transmissor250.exe'
+
+http:
+  tentativas: 3
+  timeout_segundos: 120
+
+# Arquivos por competencia: escolhe a letra mais alta (sem letra < a < b < c ...).
+arquivos_competencia:
+  - nome: DSIHD017
+    grupo: SIH
+    host: ftp2.datasus.gov.br
+    pasta: /public/sistemas/dsweb/SIHD/Programas/DSIHD017
+    padrao: '^DSIHD017_{uf}_{competencia}(?P<letra>[a-z]?)\.zip$'
+  - nome: FORNEC
+    grupo: SIH
+    host: ftp.datasus.gov.br
+    pasta: /cnes
+    padrao: '^FORNEC_{competencia}(?P<letra>[a-z]?)\.zip$'
+  - nome: IMPORT
+    grupo: SIH
+    host: ftp.datasus.gov.br
+    pasta: /cnes
+    padrao: '^IMPORT_{competencia}(?P<letra>[a-z]?)\.zip$'
+  - nome: TERCEIROS
+    grupo: SIH
+    host: ftp.datasus.gov.br
+    pasta: /cnes
+    padrao: '^TERCEIROSBRASIL{uf}_{competencia}(?P<letra>[a-z]?)\.zip$'
+  - nome: BDSIA
+    grupo: SIA
+    host: arpoador.datasus.gov.br
+    pasta: /siasus/sia
+    padrao: '^BDSIA{competencia}(?P<letra>[a-z]?)\.exe$'
+
+# TXTPROC no portal do gestor do CNES (usuario, senha e CPF ficam no .env).
+cnes_portal:
+  ativo: true
+  nome: TXTPROC
+  grupo: SIH
+  url: https://cnes2.datasus.gov.br/Cad_Gestor_Login_Txt_Nacional.asp?Prim=1
+  arquivo: 'TXTPROC_{municipio}_{competencia}'
+  # Pagina da lista de arquivos por competencia (o combo do portal leva ate ela)
+  url_competencia: 'Mod_download_Txt_Nacional.asp?VComp={competencia}'
+  mostrar_navegador: false
+  timeout_segundos: 90
+  # Se a deteccao automatica dos campos de login falhar, preencha os seletores
+  # CSS aqui (ex.: 'input[name="usuario"]'). Use "autosus.bat --diagnostico-cnes"
+  # para ver os nomes reais dos campos.
+  seletores:
+    usuario: ""
+    senha: ""
+    cpf: ""
+    entrar: ""
+
+# Producao do WebAIH no layout de importacao do SISAIH01 (usuario e senha no .env).
+# Baixa a cada execucao; se a producao mudou, guarda a versao anterior.
+# A apresentacao padrao e a competencia + 1 mes (a mesma regra da tela Exportar SISAIH01).
+webaih:
+  ativo: true
+  nome: WEBAIH
+  grupo: SIH
+  url: 'https://aih.saudebga.top/'
+  apresentacao: ''         # vazio = competencia + 1 mes; ou MM/AAAA
+  timeout_segundos: 90
+
+aviso:
+  windows: true
+  email: true
+  destinatario: vti.aviz@gmail.com
+  smtp_host: smtp.gmail.com
+  smtp_porta: 465
+
+logs:
+  manter_dias: 365

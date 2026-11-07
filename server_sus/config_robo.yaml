@@ -1,0 +1,42 @@
+# =====================================================================
+#  AutoSUS - robô de processamento (VirtualBox)
+# =====================================================================
+
+vm: "AIH"                                   # nome da VM no VirtualBox
+vboxmanage: 'C:\Program Files\Oracle\VirtualBox\VBoxManage.exe'
+abrir_vm: gui                               # gui (janela visível) ou headless
+resolucao: "1366x768"                       # tela fixa da VM (aplicada ao iniciar)
+
+# Pasta compartilhada da VM: caminho no host e nome do compartilhamento
+# (dentro da VM ela é \\VBOXSVR\<nome>)
+pasta_compartilhada: 'C:\Users\vtiav\Desktop\AIH'
+nome_compartilhamento: "AIH"
+
+# Programas instalados pelo robô e onde cada um fica dentro da VM depois de instalado
+programas:
+  SISAIH01:
+    padrao: '^sisaih01_ver(?P<versao>\d{4})\.exe$'
+    executavel: 'C:\DATASUS\SISAIH01\SISAIH01.EXE'
+  SIHD2:
+    padrao: '^SIHD2_(?P<versao>\d{4})\.exe$'
+    executavel: 'C:\Program Files\Datasus\SIHD2\SIHD2.EXE'
+  FPO:
+    padrao: '^FPOMAG_Atualiza_(?P<versao>\d{4})\.exe$'
+    executavel:                             # o primeiro que existir
+      - 'C:\Program Files (x86)\Datasus\FPO\FPOMAG.exe'
+      - 'C:\Program Files\Datasus\FPO\FPOMAG.exe'
+  TRANSMISSOR:
+    padrao: '^Transmissor(?P<versao>\d+)\.exe$'
+    executavel:                             # o primeiro que existir (instalação manual: C:\Transmissor DATASUS)
+      - 'C:\Transmissor DATASUS\Trans_datasus.exe'
+      - 'C:\Program Files\Datasus\Transmissor DATASUS\Trans_datasus.exe'
+      - 'C:\Program Files\Datasus\Transmissor DATASUS\Transmissor.exe'
+      - 'C:\Program Files (x86)\Datasus\Transmissor DATASUS\Transmissor.exe'
+      - 'C:\Program Files (x86)\Datasus\Transmissor\Transmissor.exe'
+      - 'C:\Program Files\Datasus\Transmissor\Transmissor.exe'
+      - 'C:\Datasus\Transmissor\Transmissor.exe'
+      - 'C:\Transmissor\Transmissor.exe'
+
+tempo_limite:
+  iniciar_vm_segundos: 300                  # até o agente responder depois de ligar a VM
+  instalacao_segundos: 900                  # por instalador

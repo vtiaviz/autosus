@@ -1,0 +1,34 @@
+# Ambientes e cache
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+
+# Segredos (cada app tem o seu .env; os .env.example vao para o git)
+.env
+
+# Logs, prints e estado de execucao
+logs/
+server_sus/saida/
+server_sus/estado_vm.json
+server_sus/diagnostico_resultado.txt
+server_sus/agente/pacotes/
+
+# Backups antigos
+_backup_*/
+
+# Conversor WebAIH: so codigo e documentacao. Producao, AIHs e tabelas
+# baixadas tem dados de pacientes ou sao grandes demais.
+ferramentas/converte_webAIH/*
+!ferramentas/converte_webAIH/*.py
+!ferramentas/converte_webAIH/*.md
+!ferramentas/converte_webAIH/config_hospital.json
+!ferramentas/converte_webAIH/exemplo_entrada.json
+!ferramentas/converte_webAIH/cids_com_secundario_obrigatorio.csv
+
+# Instaladores e arquivos do DATASUS, por seguranca
+*.exe
+*.zip
+*.ZIP
+*.DTS
+*.VTP
