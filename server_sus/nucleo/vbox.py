@@ -11,6 +11,8 @@ from .config import gravar_estado, ler_estado
 
 log = logging.getLogger("robo")
 
+LIMITE_DISCO_GB = 10       # abaixo disso no disco da VM, avisa (robo) ou não começa job (API)
+
 
 class VBox:
     def __init__(self, cfg: dict):
@@ -120,3 +122,9 @@ def tirar_snapshot(vbox: "VBox", nome: str, descricao: str) -> None:
                                                  "sisaih01_sessao": estado.get("sisaih01_sessao")}
     gravar_estado(estado)
     log.info("Snapshot criado: %s (para voltar: robo.bat restaurar %s --confirmar)", nome, nome)
+
+
+def espaco_disco_vm(vbox: VBox) -> tuple[str, float]:
+    """Disco onde a VM grava (disco virtual e snapshots) e o espaço livre nele, em GB."""
+    disco = disco_da_vm(vbox.info())
+    return disco, round(shutil.disk_usage(disco).free / 2**30, 1)

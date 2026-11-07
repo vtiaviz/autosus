@@ -99,7 +99,7 @@ log = logging.getLogger("robo")
 from nucleo.config import (ESTADO, carregar_config, credenciais, gravar_estado, ler_estado,  # noqa: E402
                             variavel_env)
 from nucleo.fila import Fila  # noqa: E402
-from nucleo.vbox import VBox, disco_da_vm, tirar_snapshot  # noqa: E402
+from nucleo.vbox import LIMITE_DISCO_GB, VBox, disco_da_vm, tirar_snapshot  # noqa: E402
 
 
 # ------------------------------------------------------------------ configuração e logs
@@ -205,12 +205,22 @@ def executar(fila: Fila, vbox: "VBox", pasta_logs: Path, tipo: str, limite: floa
     return r
 
 
-def espaco_livre() -> None:
-    """A VirtualBox pausa a VM sozinha quando o disco do host enche; vale conferir."""
-    livre = shutil.disk_usage("C:\\" if sys.platform == "win32" else "/").free / 2**30
-    nivel = log.warning if livre < 10 else log.info
-    nivel("Espaço livre no disco do host: %.1f GB%s", livre,
-          " (pouco: a VirtualBox pausa a VM quando o disco enche)" if livre < 10 else "")
+def espaco_livre(vbox: "VBox | None" = None) -> None:
+    """A VirtualBox pausa a VM sozinha quando o disco onde ela grava enche; vale conferir o C: e,
+    se for outro, o disco da VM (pasta de snapshots)."""
+    discos = ["C:\\" if sys.platform == "win32" else "/"]
+    if vbox:
+        try:
+            disco = disco_da_vm(vbox.info())
+            if disco.upper() not in (d.upper() for d in discos):
+                discos.append(disco)
+        except RuntimeError:
+            pass
+    for disco in discos:
+        livre = shutil.disk_usage(disco).free / 2**30
+        nivel = log.warning if livre < LIMITE_DISCO_GB else log.info
+        nivel("Espaço livre no disco %s: %.1f GB%s", disco, livre,
+              " (pouco: a VirtualBox pausa a VM quando o disco enche)" if livre < LIMITE_DISCO_GB else "")
 
 
 def tamanho_pasta(pasta: Path) -> float:
@@ -223,7 +233,7 @@ def tamanho_pasta(pasta: Path) -> float:
 def cmd_status(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
     info = vbox.info()
     log.info("VM %s: %s | memória %s MB | CPUs %s", cfg["vm"], info.get("VMState"), info.get("memory"), info.get("cpus"))
-    espaco_livre()
+    espaco_livre(vbox)
     log.info("Snapshots: %s", ", ".join(vbox.snapshots()) or "nenhum")
     b = fila.batimento()
     if b:
@@ -258,7 +268,7 @@ def cmd_iniciar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
     inicio = time.time()
     if estado == "paused":
         log.warning("A VM estava PAUSADA; retomando. Se ela pausar de novo, confira o espaço em disco do host.")
-        espaco_livre()
+        espaco_livre(vbox)
         vbox.retomar()
     elif estado != "running":
         log.info("Ligando a VM %s (estado atual: %s)...", cfg["vm"], estado)
@@ -1195,7 +1205,7 @@ def cmd_snapshots(cfg, vbox: VBox, fila, pasta_logs, args) -> int:
     pasta = Path(info.get("SnapFldr", ""))
     if pasta.is_dir():
         log.info("Pasta dos snapshots: %s (%.1f GB)", pasta, tamanho_pasta(pasta))
-    espaco_livre()
+    espaco_livre(vbox)
     return 0
 
 
@@ -1224,7 +1234,7 @@ def cmd_apagar_snapshot(cfg, vbox: VBox, fila, pasta_logs, args) -> int:
         except RuntimeError as e:
             log.error("  não apagou: %s", str(e).strip().splitlines()[-1] if str(e).strip() else e)
             falhas.append(nome)
-    espaco_livre()
+    espaco_livre(vbox)
     if falhas:
         log.error("Não apagados: %s", " ".join(falhas))
         return 1

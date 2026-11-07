@@ -22,7 +22,7 @@ import threading
 import time
 import traceback
 
-VERSAO = "1.22.5"
+VERSAO = "1.22.6"
 COMPARTILHAMENTO = os.environ.get("AUTOSUS_COMPARTILHAMENTO", "AIH")
 RAIZ = os.environ.get("AUTOSUS_RAIZ", r"\\VBOXSVR\%s\_robo" % COMPARTILHAMENTO)
 INTERVALO = 3          # segundos entre verificações da fila
@@ -1803,10 +1803,17 @@ def tarefa_fpo_valores(p, pasta_res):
             arquivos.append(img)
         clicar_botao(botao_por_texto(perc, "Aplicar"))
         acompanhar(tela, pid, regras, eventos, 1800, quieto=8)
-        clicar_botao(botao_por_texto(tela, "Gravar"))
-        eventos.append("clicou em Gravar")
-        acompanhar(tela, pid, regras, eventos, 1800, quieto=8)
-        if not any("GRAVADOS" in _norm(e) for e in eventos):
+        # O FPO ainda pode estar "aplicando incremento na programação" depois de 'Percentuais aplicados!'
+        # (com a VM lenta, minutos): espera a mensagem 'Valores gravados!' em vez de só alguns segundos
+        # de silêncio; se ela não vier, tenta o Gravar mais uma vez.
+        gravou = lambda ev: any("GRAVADOS" in _norm(e) for e in ev)   # noqa: E731
+        for tentativa in (1, 2):
+            clicar_botao(botao_por_texto(tela, "Gravar"))
+            eventos.append("clicou em Gravar" + (" (de novo)" if tentativa == 2 else ""))
+            acompanhar(tela, pid, regras, eventos, 1800, quieto=600, terminou=gravou)
+            if gravou(eventos):
+                break
+        if not gravou(eventos):
             raise RuntimeError("não apareceu a mensagem 'Valores gravados!'")
         clicar_botao(botao_por_texto(tela, "Fechar"))
         return {"competencia": comp_tela}

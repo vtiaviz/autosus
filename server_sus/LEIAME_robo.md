@@ -47,7 +47,60 @@ POST /vm/snapshots       cria snapshot {"nome": "...", "descricao": "..."}
 GET  /vm/print           print da tela da VM (PNG)
 GET  /agente             último sinal do agente e tarefas na fila
 POST /agente/ping        pede um ping ao agente (até 60 s)
+
+GET  /competencias/{AAAAMM}/arquivos   o que a competência precisa e o que já chegou (null = falta)
+POST /competencias/{AAAAMM}/arquivos   envia um arquivo (multipart: arquivo, sha256 opcional)
+GET  /competencias/{AAAAMM}/saidas     arquivos gerados em saida\<apresentação> com SHA-256
+
+POST /jobs               novo processamento (veja abaixo)
+GET  /jobs               últimos jobs
+GET  /jobs/{id}          situação, passo atual, progresso do agente e conferência das saídas
+GET  /jobs/{id}/log?desde=N   saída do robô a partir do byte N (devolve "proximo")
+POST /jobs/{id}/cancelar      tira da fila ou para o job em andamento
 ```
+
+### Arquivos
+
+O envio aceita só os nomes conhecidos (instaladores, DSIHD017, FORNEC, IMPORT, TERCEIROS, TXTPROC,
+BDSIA e a produção `AAAAMM_SISAIH01_<CNES>.txt`) e guarda na mesma pasta que o robô já usa
+(`pasta_destino` do downloader): `programas\`, `AAAA-MM\SIH\` ou `AAAA-MM\SIA\`. Se o arquivo já
+existe igual, nada muda (`ja_existe`); se é diferente, o anterior fica com `_anterior_<data>` no nome.
+
+### Jobs
+
+Um job é uma lista de etapas, executadas uma por vez, cada uma pelo próprio `robo.py`:
+
+| Etapa | Comandos do robô |
+| --- | --- |
+| `iniciar` | `iniciar`, `preparar` |
+| `atualizar` | `instalar` (maior versão baixada de cada programa) |
+| `sisaih01` | `sisaih01 completo <apresentação> --confirmar` |
+| `fpo` | `fpo completo <competência>` |
+| `sihd` | `sihd completo <competência> --confirmar --auto` (ou `--manual` com `"sihd_manual": true`) |
+| `transmissor_testar` | `transmissor preparar <competência>`, `transmissor testar` (não transmite) |
+| `restaurar:<snapshot>` | `restaurar <snapshot> --confirmar`, `iniciar`, `preparar` |
+
+Exemplo (o mesmo roteiro do `teste_completo.ps1`):
+
+```json
+{"competencia": "202608",
+ "etapas": ["restaurar:antes_sihd_202608", "sisaih01", "fpo", "sihd",
+            "restaurar:com_transmissor_teste", "transmissor_testar"],
+ "versao_sihd": 2340, "sem_snapshot": true}
+```
+
+Situações: `na_fila`, `executando`, `concluido`, `falhou`, `aguardando_decisao` (SIHD em modo manual
+com AIHs bloqueadas), `cancelado` e `interrompido` (a API foi fechada no meio). No fim, o job confere
+se cada etapa gerou sua saída depois do início dele (`.Zip` do SISAIH01, `.VTP` do FPO, `.DTS` e
+resumo do SIHD). Cada job fica em `server_sus\jobs\<id>\` (`job.json` e `saida.log`).
+
+### Testes
+
+```
+..\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+..\.venv\Scripts\python.exe -m pytest
+```
+Os testes automáticos não usam a VM.
 
 O código comum ao `robo.py` e à API (VirtualBox, fila do agente, configuração e estado) fica em `nucleo\`.
 

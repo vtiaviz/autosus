@@ -32,3 +32,7 @@ ferramentas/converte_webAIH/*
 *.ZIP
 *.DTS
 *.VTP
+
+# Jobs de processamento do Server_SUS (log e situacao de cada execucao)
+server_sus/jobs/
+.pytest_cache/
