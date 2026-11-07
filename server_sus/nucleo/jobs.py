@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -99,11 +100,13 @@ def rodar_robo(args: list[str], ao_ler: Callable[[str], None], parar: threading.
 
 
 class Jobs:
-    def __init__(self, pasta: Path | None = None, executor=rodar_robo, raiz_fila: Path | None = None):
+    def __init__(self, pasta: Path | None = None, executor=rodar_robo, raiz_fila: Path | None = None,
+                 verificar: Callable[[], str | None] | None = None):
         self.pasta = pasta or PASTA / "jobs"
         self.pasta.mkdir(parents=True, exist_ok=True)
         self.executor = executor
         self.raiz_fila = raiz_fila            # <compartilhada>/_robo, para cancelar e ler o progresso
+        self.verificar = verificar            # antes de cada passo: devolve um motivo para não seguir
         self._trava = threading.Lock()
         self._novo = threading.Event()
         self._parar_atual = threading.Event()
@@ -119,18 +122,25 @@ class Jobs:
         return self.pasta / id_ / "job.json"
 
     def _ler(self, id_: str) -> dict:
-        return json.loads(self._arq(id_).read_text(encoding="utf-8"))
+        return ler_json(self._arq(id_))
 
     def _gravar(self, job: dict) -> None:
+        # no Windows, trocar o arquivo falha enquanto outra thread o lê: tenta de novo por até 2 s
         arq = self._arq(job["id"])
-        tmp = arq.with_suffix(".tmp")
+        tmp = arq.with_name(f"job.{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+        for _ in range(100):
+            try:
+                tmp.replace(arq)
+                return
+            except PermissionError:
+                time.sleep(0.02)
         tmp.replace(arq)
 
     def _recuperar(self) -> None:
         """Jobs que estavam rodando quando a API caiu não são retomados sozinhos."""
         for arq in self.pasta.glob("*/job.json"):
-            job = json.loads(arq.read_text(encoding="utf-8"))
+            job = ler_json(arq)
             if job["situacao"] in ("executando", "na_fila"):
                 job["situacao"] = "interrompido"
                 job["mensagem"] = "a API do Server_SUS foi reiniciada durante o job"
@@ -140,8 +150,8 @@ class Jobs:
     # ---------------------------------------------------------------- consulta
 
     def listar(self) -> list[dict]:
-        jobs = [json.loads(a.read_text(encoding="utf-8")) for a in self.pasta.glob("*/job.json")]
-        return sorted(jobs, key=lambda j: j["id"], reverse=True)
+        jobs = [ler_json(a) for a in self.pasta.glob("*/job.json")]
+        return sorted(jobs, key=lambda j: j.get("ordem", 0), reverse=True)
 
     def obter(self, id_: str) -> dict | None:
         if not re.fullmatch(r"[\w-]+", id_) or not self._arq(id_).exists():
@@ -176,7 +186,8 @@ class Jobs:
         id_ = f"{dt.datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}"
         passos = [{"etapa": e, "args": a, "situacao": "pendente"} for e in etapas for a in comandos(e, competencia, opcoes)]
         job = {"id": id_, "competencia": competencia, "apresentacao": apresentacao(competencia), "etapas": etapas,
-               "opcoes": opcoes, "situacao": "na_fila", "criado": agora(), "inicio": None, "fim": None,
+               "opcoes": opcoes, "situacao": "na_fila", "criado": agora(), "ordem": time.time_ns(),
+               "inicio": None, "fim": None,
                "passo_atual": None, "passos": passos, "mensagem": None, "conferencia": None}
         (self.pasta / id_).mkdir()
         self._gravar(job)
@@ -206,7 +217,7 @@ class Jobs:
 
     def _proximo(self) -> dict | None:
         fila = [j for j in self.listar() if j["situacao"] == "na_fila"]
-        return min(fila, key=lambda j: j["id"]) if fila else None
+        return min(fila, key=lambda j: j.get("ordem", 0)) if fila else None     # o mais antigo primeiro
 
     def _trabalhar(self) -> None:
         while True:
@@ -249,6 +260,11 @@ class Jobs:
                     job["passo_atual"] = i
                     passo.update(situacao="executando", inicio=agora())
                     self._gravar(job)
+                problema = self.verificar() if self.verificar else None
+                if problema:
+                    passo["situacao"] = "falhou"
+                    saida.write(f"\n*** {problema}\n")
+                    return self._fechar(job, "falhou", problema)
                 saida.write(f"\n===== {agora()}  robo {' '.join(passo['args'])} =====\n")
                 self._tarefa_agente = None
                 codigo = self.executor(passo["args"], ao_ler, self._parar_atual, ao_iniciar)
@@ -290,6 +306,16 @@ class Jobs:
         job.update(situacao=situacao, mensagem=mensagem, fim=agora())
         self._gravar(job)
         log.info("job %s: %s%s", job["id"], situacao, f" ({mensagem})" if mensagem else "")
+
+
+def ler_json(arq: Path) -> dict:
+    """Lê o job.json; se ele estiver sendo trocado naquele instante, tenta de novo por até 2 s."""
+    for _ in range(100):
+        try:
+            return json.loads(arq.read_text(encoding="utf-8"))
+        except (PermissionError, ValueError):
+            time.sleep(0.02)
+    return json.loads(arq.read_text(encoding="utf-8"))
 
 
 def agora() -> str:

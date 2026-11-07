@@ -120,14 +120,29 @@ def test_cancelar_job_rodando_avisa_o_agente(tmp_path, saida):
     assert len(robo.chamadas) == 1
 
 
-def test_cancelar_na_fila_e_recuperar_interrompido(tmp_path, saida):
-    robo = Robo(saida, demora=2)
+def test_cancelar_na_fila(tmp_path, saida):
+    robo = Robo(saida, demora=1)
     jobs = j.Jobs(tmp_path / "jobs", executor=robo)
     primeiro = jobs.criar("202608", ["fpo"], {})
-    segundo = jobs.criar("202608", ["fpo"], {})
+    segundo = jobs.criar("202608", ["sisaih01"], {})
     assert jobs.cancelar(segundo["id"])["situacao"] == "cancelado"
-    while jobs.obter(primeiro["id"])["situacao"] == "na_fila":
-        time.sleep(0.02)
-    # outra instância (API reiniciada) marca o que estava rodando como interrompido
-    outro = j.Jobs(tmp_path / "jobs", executor=robo)
-    assert outro.obter(primeiro["id"])["situacao"] == "interrompido"
+    assert esperar(jobs, primeiro["id"])["situacao"] == "concluido"
+    assert [c[0] for c in robo.chamadas] == ["fpo"]
+
+
+def test_api_reiniciada_marca_interrompido(tmp_path):
+    # um job.json que ficou "executando" quando a API caiu
+    pasta = tmp_path / "jobs" / "20261107_000000_abcdef"
+    pasta.mkdir(parents=True)
+    (pasta / "job.json").write_text('{"id": "20261107_000000_abcdef", "situacao": "executando", "passos": []}',
+                                    encoding="utf-8")
+    jobs = j.Jobs(tmp_path / "jobs", executor=lambda *a: 0)
+    assert jobs.obter("20261107_000000_abcdef")["situacao"] == "interrompido"
+
+
+def test_verificacao_impede_o_passo(tmp_path, saida):
+    robo = Robo(saida)
+    jobs = j.Jobs(tmp_path / "jobs", executor=robo, verificar=lambda: "só 0.0 GB livres no disco D:\\")
+    fim = esperar(jobs, jobs.criar("202608", ["fpo"], {})["id"])
+    assert fim["situacao"] == "falhou" and "D:" in fim["mensagem"]
+    assert robo.chamadas == []

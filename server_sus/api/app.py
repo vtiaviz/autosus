@@ -27,7 +27,7 @@ from nucleo import arquivos
 from nucleo.config import PASTA, carregar_config, ler_estado, variavel_env
 from nucleo.fila import Fila
 from nucleo.jobs import Jobs
-from nucleo.vbox import VBox, tirar_snapshot
+from nucleo.vbox import LIMITE_DISCO_GB, VBox, espaco_disco_vm, tirar_snapshot
 
 VERSAO = "0.2.0"
 log = logging.getLogger("robo")
@@ -49,8 +49,22 @@ cfg = carregar_config()
 vbox = VBox(cfg)
 fila = Fila(cfg)
 trava_vm = threading.Lock()          # uma operação na VM por vez (ligar, desligar, snapshot)
+
+
+def disco_da_vm_cheio() -> str | None:
+    """Com o disco da VM cheio a VirtualBox pausa a VM no meio do processamento: melhor nem começar."""
+    try:
+        disco, livre = espaco_disco_vm(vbox)
+    except RuntimeError as e:
+        return f"não foi possível ler a VM: {e}"
+    if livre < LIMITE_DISCO_GB:
+        return (f"só {livre} GB livres no disco {disco}, onde a VM grava (mínimo {LIMITE_DISCO_GB} GB); "
+                f"libere espaço ou apague snapshots antigos")
+    return None
+
+
 jobs = Jobs(Path(os.environ["SERVER_SUS_JOBS"]) if os.environ.get("SERVER_SUS_JOBS") else None,
-            raiz_fila=fila.raiz)
+            raiz_fila=fila.raiz, verificar=disco_da_vm_cheio)
 
 app = FastAPI(title="Server_SUS", version=VERSAO,
               description="Controle da VM dos sistemas do SUS e do agente que opera os programas.")
@@ -89,6 +103,8 @@ class Vm(BaseModel):
     memoria_mb: int | None = None
     cpus: int | None = None
     espaco_livre_host_gb: float
+    disco_vm: str
+    espaco_livre_disco_vm_gb: float
     snapshots: list[str]
     versoes_instaladas: dict[str, str]
 
@@ -141,9 +157,11 @@ def ler_agente() -> Agente:
 
 def ler_vm() -> Vm:
     info = vbox.info()
+    disco, livre = espaco_disco_vm(vbox)
     return Vm(nome=cfg["vm"], estado=info.get("VMState", "?"), memoria_mb=_int(info.get("memory")),
               cpus=_int(info.get("cpus")),
               espaco_livre_host_gb=round(shutil.disk_usage("C:\\").free / 2**30, 1),
+              disco_vm=disco, espaco_livre_disco_vm_gb=livre,
               snapshots=vbox.snapshots(), versoes_instaladas=ler_estado().get("instalado", {}))
 
 
