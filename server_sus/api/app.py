@@ -1,4 +1,4 @@
-"""Server_SUS - API HTTP usada pelo AutoSUS (etapa 2: VM, snapshots e agente).
+"""Server_SUS - API HTTP usada pelo AutoSUS: VM, snapshots, agente, arquivos e jobs de processamento.
 
 Só expõe ações conhecidas, como o agente. Toda rota, menos /saude, exige o cabeçalho
 "Authorization: Bearer <SERVER_SUS_TOKEN>" (token no server_sus\\.env).
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 import secrets
 import shutil
 import sys
@@ -16,17 +17,19 @@ import tempfile
 import threading
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
+from nucleo import arquivos
 from nucleo.config import PASTA, carregar_config, ler_estado, variavel_env
 from nucleo.fila import Fila
+from nucleo.jobs import Jobs
 from nucleo.vbox import VBox, tirar_snapshot
 
-VERSAO = "0.1.0"
+VERSAO = "0.2.0"
 log = logging.getLogger("robo")
 
 
@@ -46,6 +49,8 @@ cfg = carregar_config()
 vbox = VBox(cfg)
 fila = Fila(cfg)
 trava_vm = threading.Lock()          # uma operação na VM por vez (ligar, desligar, snapshot)
+jobs = Jobs(Path(os.environ["SERVER_SUS_JOBS"]) if os.environ.get("SERVER_SUS_JOBS") else None,
+            raiz_fila=fila.raiz)
 
 app = FastAPI(title="Server_SUS", version=VERSAO,
               description="Controle da VM dos sistemas do SUS e do agente que opera os programas.")
@@ -88,6 +93,17 @@ class Vm(BaseModel):
     versoes_instaladas: dict[str, str]
 
 
+class NovoJob(BaseModel):
+    competencia: str = Field(..., pattern=r"^20\d{2}(0[1-9]|1[0-2])$", description="AAAAMM, ex.: 202608")
+    etapas: list[str] = Field(..., min_length=1, examples=[["iniciar", "atualizar", "sisaih01", "fpo", "sihd"]],
+                              description="iniciar, atualizar, sisaih01, fpo, sihd, transmissor_testar "
+                                          "ou restaurar:<snapshot>, na ordem em que devem rodar")
+    sihd_manual: bool = Field(False, description="para nas AIHs bloqueadas (senão libera todas)")
+    versao_sihd: int | None = None
+    sihd_a_partir_de: str | None = Field(None, pattern=r"^[a-z_]{1,30}$")
+    sem_snapshot: bool = Field(False, description="não tira snapshot antes de SISAIH01, FPO e SIHD")
+
+
 class NovoSnapshot(BaseModel):
     nome: str | None = Field(None, pattern=r"^[\w.-]{1,60}$",
                              description="padrão: antes_AAAAMMDD_HHMM")
@@ -106,6 +122,12 @@ def _int(valor) -> int | None:
 def _erro_vbox(e: RuntimeError) -> HTTPException:
     log.error("API: %s", e)
     return HTTPException(409, str(e))
+
+
+def sem_job_rodando() -> None:
+    em_andamento = [j["id"] for j in jobs.listar() if j["situacao"] == "executando"]
+    if em_andamento:
+        raise HTTPException(409, f"há um job em andamento ({em_andamento[0]}); cancele ou espere terminar")
 
 
 def ler_agente() -> Agente:
@@ -161,6 +183,7 @@ def vm_ligar() -> dict:
 @app.post("/vm/desligar", dependencies=protegido)
 def vm_desligar() -> dict:
     """Desligamento normal (botão ACPI): o Windows da VM fecha os programas e desliga."""
+    sem_job_rodando()
     with trava_vm:
         try:
             estado = vbox.estado()
@@ -185,6 +208,7 @@ def snapshots() -> list[dict]:
 @app.post("/vm/snapshots", dependencies=protegido, status_code=201)
 def snapshot_novo(pedido: NovoSnapshot) -> dict:
     nome = pedido.nome or f"antes_{dt.datetime.now():%Y%m%d_%H%M}"
+    sem_job_rodando()
     with trava_vm:
         try:
             if nome in vbox.snapshots():
@@ -221,3 +245,83 @@ def agente_ping() -> dict:
     if not r:
         raise HTTPException(504, "o agente não respondeu em 60 s")
     return {"ok": bool(r.get("ok")), "tarefa": id_, "dados": r.get("dados")}
+
+
+# ------------------------------------------------------------------ arquivos por competência
+
+def _competencia(aaaamm: str) -> str:
+    try:
+        return arquivos.validar_competencia(aaaamm)
+    except arquivos.ArquivoRecusado as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@app.get("/competencias/{aaaamm}/arquivos", dependencies=protegido)
+def entrada(aaaamm: str) -> dict:
+    """Arquivos de entrada da competência: o mais recente de cada item necessário, ou null se falta."""
+    return arquivos.situacao_entrada(_competencia(aaaamm))
+
+
+@app.post("/competencias/{aaaamm}/arquivos", dependencies=protegido, status_code=201)
+def enviar_arquivo(aaaamm: str, arquivo: UploadFile = File(...),
+                   sha256: str | None = Form(None, pattern=r"^[0-9a-fA-F]{64}$")) -> dict:
+    """Recebe um arquivo da competência (ou um instalador) e confere o SHA-256, se informado.
+    situacao: novo, ja_existe (igual ao que já estava) ou substituido (o anterior fica com _anterior_)."""
+    try:
+        r = arquivos.gravar(arquivo.filename or "", _competencia(aaaamm), arquivo.file, sha256)
+    except arquivos.ArquivoRecusado as e:
+        raise HTTPException(422, str(e)) from e
+    log.info("API: arquivo %s (%s) %s", r["nome"], aaaamm, r["situacao"])
+    return r
+
+
+@app.get("/competencias/{aaaamm}/saidas", dependencies=protegido)
+def saidas(aaaamm: str) -> dict:
+    """Arquivos gerados para a apresentação (AIH .Zip, .VTP, .DTS, resumo do SIHD)."""
+    comp = _competencia(aaaamm)
+    return {"competencia": comp, "apresentacao": arquivos.apresentacao(comp), "arquivos": arquivos.listar_saidas(comp)}
+
+
+# ------------------------------------------------------------------ jobs de processamento
+
+@app.post("/jobs", dependencies=protegido, status_code=201)
+def novo_job(pedido: NovoJob) -> dict:
+    """Coloca um processamento na fila. Os jobs rodam um por vez; acompanhe com GET /jobs/{id}."""
+    opcoes = pedido.model_dump(exclude={"competencia", "etapas"}, exclude_none=True)
+    try:
+        return jobs.criar(pedido.competencia, pedido.etapas, opcoes)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@app.get("/jobs", dependencies=protegido)
+def listar_jobs(limite: int = 20) -> list[dict]:
+    return [{k: j.get(k) for k in ("id", "competencia", "etapas", "situacao", "criado", "inicio", "fim", "mensagem")}
+            for j in jobs.listar()[:max(1, min(limite, 200))]]
+
+
+@app.get("/jobs/{id_}", dependencies=protegido)
+def ver_job(id_: str) -> dict:
+    job = jobs.obter(id_)
+    if not job:
+        raise HTTPException(404, "job não encontrado")
+    return job
+
+
+@app.get("/jobs/{id_}/log", dependencies=protegido)
+def log_job(id_: str, desde: int = 0) -> dict:
+    """Saída do robô a partir do byte 'desde'; use o 'proximo' devolvido na chamada seguinte."""
+    if not jobs.obter(id_):
+        raise HTTPException(404, "job não encontrado")
+    texto, proximo = jobs.log(id_, desde)
+    return {"texto": texto, "proximo": proximo}
+
+
+@app.post("/jobs/{id_}/cancelar", dependencies=protegido)
+def cancelar_job(id_: str) -> dict:
+    """Cancela: se estiver na fila, sai dela; se estiver rodando, o agente para no próximo passo
+    (a tela aberta na VM fica como está)."""
+    job = jobs.cancelar(id_)
+    if not job:
+        raise HTTPException(404, "job não encontrado")
+    return job
