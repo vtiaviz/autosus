@@ -1,0 +1,15 @@
+Fotos do fundo da tela de login: Unsplash (licença Unsplash, uso gratuito), baixadas em 1920 px.
+Trocadas a cada hora em login.html.
+
+fundo-01.jpg  https://unsplash.com/photos/d3fe9qJDqaI  (mulher recebendo vacina, sorrindo)
+fundo-02.jpg  https://unsplash.com/photos/dMhB7w99ju8  (enfermeira sorrindo com paciente idosa)
+fundo-03.jpg  https://unsplash.com/photos/2TnRgGnVLFU  (paciente sorrindo durante atendimento)
+fundo-04.jpg  https://unsplash.com/photos/fx9RJgZYRUE  (médica examinando bebê no colo da mãe)
+fundo-05.jpg  https://unsplash.com/photos/ajH95zTZH8k  (médico e menina sorrindo)
+fundo-06.jpg  https://unsplash.com/photos/GnLuuG9crEY  (idosa sorrindo na vacinação)
+fundo-07.jpg  https://unsplash.com/photos/-ZD3WieO43E  (equipe de saúde reunida)
+fundo-08.jpg  https://unsplash.com/photos/Sc_XqQTDvbE  (médico abraçando criança)
+fundo-09.jpg  https://unsplash.com/photos/iKCuym5Kt5o  (profissional cumprimentando menino no leito)
+fundo-10.jpg  https://unsplash.com/photos/eRExodEMiOE  (crianças brincando na enfermaria)
+fundo-11.jpg  https://unsplash.com/photos/COV00lEV3fM  (mãe com bebê e enfermeira no quarto)
+fundo-12.jpg  https://unsplash.com/photos/yg1Zayn0Few  (criança sorrindo no leito)
