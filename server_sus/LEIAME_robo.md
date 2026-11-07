@@ -32,5 +32,24 @@ robo.bat desligar               desliga a VM (ACPI)
 
 Para atualizar o agente depois de uma mudança: `robo.bat preparar` (copia e reinicia o agente).
 
+## API (usada pelo AutoSUS)
+
+`api.bat` sobe a API em `http://127.0.0.1:8765` (documentação interativa em `/docs`). Toda rota,
+menos `/saude`, exige `Authorization: Bearer <SERVER_SUS_TOKEN>` (token no `.env`).
+
+```
+GET  /saude              API no ar (sem token)
+GET  /vm                 estado, memória, espaço no host, snapshots, versões instaladas
+POST /vm/ligar           liga ou retoma a VM e volta na hora; acompanhe GET /agente
+POST /vm/desligar        desligamento normal (ACPI)
+GET  /vm/snapshots       lista de snapshots com as versões de cada um
+POST /vm/snapshots       cria snapshot {"nome": "...", "descricao": "..."}
+GET  /vm/print           print da tela da VM (PNG)
+GET  /agente             último sinal do agente e tarefas na fila
+POST /agente/ping        pede um ping ao agente (até 60 s)
+```
+
+O código comum ao `robo.py` e à API (VirtualBox, fila do agente, configuração e estado) fica em `nucleo\`.
+
 Senhas dos programas ficam no `C:\AutoSUS\server_sus\.env` (SISAIH01_USUARIO, SISAIH01_SENHA, ...).
 Sem elas, o robô usa o padrão do DATASUS (mestre/mestre).
