@@ -1,0 +1,24 @@
+{
+  "apresentacao": "202609",
+  "cnes": "2312166",
+  "municipio": "150175",
+  "orgao_emissor": "M150175801",
+  "autorizador_cns": "120608577770007",
+  "lote": "1",
+  "modalidade": "02",
+  "telefone_padrao": "94333224152",
+  "especialidade_fixa": "",
+  "preencher_liberacao_permanencia": true,
+  "media_permanencia_sigtap": {},
+  "corrigir_dv_aih": true,
+  "classificacao_cid_secundario_padrao": "1",
+  "parto_padrao": {
+    "parto_nascidos_vivos": "1",
+    "parto_nascidos_mortos": "0",
+    "parto_saida_alta": "1",
+    "parto_saida_transf": "0",
+    "parto_saida_obito": "0"
+  },
+  "motivo_saida_parto_padrao": "61",
+  "sigtap": "TabelaUnificada_202501.zip"
+}
