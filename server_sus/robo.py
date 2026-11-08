@@ -317,14 +317,33 @@ def instaladores(origem: Path, padrao: str) -> list[tuple[int, Path]]:
     return sorted((int(m.group("versao")), p) for p in origem.glob("*") if (m := rx.match(p.name)))
 
 
+def versao_sisaih01_para(lista: list[tuple[int, Path]], apres: str) -> list[tuple[int, Path]]:
+    """Instaladores do SISAIH01 que servem para a apresentação MM/AAAA.
+
+    Cada versão do SISAIH01 só abre uma apresentação (ex.: 2520 = 09/2026, 2541 = 11/2026), então a
+    mais nova nem sempre serve. Usa as versões já conhecidas (estado_vm.json); se nenhuma é dessa
+    apresentação, tenta as que ainda não foram abertas nenhuma vez (o abrir confere e anota)."""
+    conhecidas = ler_estado().get("apresentacao_por_versao", {}).get("SISAIH01", {})
+    certas = [x for x in lista if conhecidas.get(str(x[0])) == apres]
+    return certas or [x for x in lista if str(x[0]) not in conhecidas]
+
+
 def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
     versao = None
     pasta_extra = None
+    apres = None
     extra = list(args.extra)
     if "--versao" in extra:
         i = extra.index("--versao")
         versao = int(extra[i + 1])
         del extra[i:i + 2]
+    if "--apresentacao" in extra:                # SISAIH01: a versão dessa apresentação, não a mais nova
+        i = extra.index("--apresentacao")
+        apres = extra[i + 1]
+        del extra[i:i + 2]
+        if not re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", apres):
+            log.error("Apresentação inválida: %s (use MM/AAAA)", apres)
+            return 2
     if "--pasta" in extra:                       # instaladores guardados em outra pasta (ex.: Produção 08-2026)
         i = extra.index("--pasta")
         pasta_extra = Path(extra[i + 1])
@@ -348,6 +367,20 @@ def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
             lista = sorted(lista + instaladores(pasta_extra, prog["padrao"]))
         if versao:
             lista = [x for x in lista if x[0] == versao]
+        elif apres and nome == "SISAIH01":
+            conhecidas = ler_estado().get("apresentacao_por_versao", {}).get("SISAIH01", {})
+            servem = versao_sisaih01_para(lista, apres)
+            if not servem:
+                # não instala a mais nova no lugar: o sisaih01 completo para logo, com a mesma explicação
+                log.warning("SISAIH01: nenhum instalador baixado é da apresentação %s (baixados: %s). Baixe a "
+                            "versão do SISAIH01 dessa apresentação e coloque em %s. O SISAIH01 da VM "
+                            "fica como está.", apres,
+                            ", ".join(f"{v} = {conhecidas.get(str(v), '?')}" for v, _ in lista) or "nenhum", origem)
+                continue
+            if conhecidas.get(str(servem[-1][0])) != apres:
+                log.warning("SISAIH01: a versão %d ainda não foi aberta; o abrir confere se ela é da apresentação %s.",
+                            servem[-1][0], apres)
+            lista = servem
         if not lista:
             log.error("%s: instalador %s não encontrado em %s.", nome, f"da versão {versao}" if versao else "", origem)
             return 1
@@ -355,6 +388,9 @@ def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
         shutil.copy2(arq, fila.raiz / "entrada" / arq.name)
         log.info("%s: %s copiado para a VM", nome, arq.name)
         itens.append({"programa": nome, "arquivo": f"entrada/{arq.name}", "executavel": prog["executavel"]})
+    if not itens:
+        log.error("Nada para instalar.")
+        return 1
 
     if not fila.agente_vivo():
         log.error("Agente sem sinal. Rode 'robo.bat iniciar'.")
@@ -1040,6 +1076,15 @@ def sisaih01_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
                   "Repita com --confirmar.", resto[0])
         return 2
     apres, arquivo = resto[0], resto[1:]
+    # antes de mexer na VM: a versão instalada precisa ser a dessa apresentação
+    estado = ler_estado()
+    instalada = estado.get("instalado", {}).get("SISAIH01")
+    da_instalada = estado.get("apresentacao_por_versao", {}).get("SISAIH01", {}).get(str(instalada))
+    if da_instalada and da_instalada != apres:
+        log.error("O SISAIH01 instalado na VM (versão %s) é da apresentação %s, mas a produção é da %s. "
+                  "Instale a versão certa: robo.bat instalar SISAIH01 --apresentacao %s "
+                  "(ou rode o job com a etapa \"atualizar\").", instalada, da_instalada, apres, apres)
+        return 1
     flags = [a for a in args.extra if a in ("--confirmar", "--sem-snapshot")]
     etapas = [("abrir", ["abrir", apres]),
               ("excluir", ["excluir", apres] + flags),

@@ -1,0 +1,30 @@
+from pathlib import Path
+
+import robo
+from nucleo import jobs as j
+
+LISTA = [(2510, Path("sisaih01_ver2510.exe")), (2520, Path("sisaih01_ver2520.exe")),
+         (2540, Path("sisaih01_ver2540.exe")), (2541, Path("sisaih01_ver2541.exe"))]
+CONHECIDAS = {"2520": "09/2026", "2540": "11/2026", "2541": "11/2026"}
+
+
+def com_estado(monkeypatch, conhecidas):
+    monkeypatch.setattr(robo, "ler_estado", lambda: {"instalado": {}, "apresentacao_por_versao": {"SISAIH01": conhecidas}})
+
+
+def test_versao_conhecida_da_apresentacao(monkeypatch):
+    com_estado(monkeypatch, CONHECIDAS)
+    assert [v for v, _ in robo.versao_sisaih01_para(LISTA, "11/2026")] == [2540, 2541]
+    assert [v for v, _ in robo.versao_sisaih01_para(LISTA, "09/2026")] == [2520]
+
+
+def test_sem_versao_conhecida_tenta_as_nunca_abertas(monkeypatch):
+    com_estado(monkeypatch, CONHECIDAS)
+    assert [v for v, _ in robo.versao_sisaih01_para(LISTA, "10/2026")] == [2510]
+    com_estado(monkeypatch, {**CONHECIDAS, "2510": "08/2026"})
+    assert robo.versao_sisaih01_para(LISTA, "10/2026") == []
+
+
+def test_atualizar_instala_o_sisaih01_da_apresentacao():
+    assert j.comandos("atualizar", "202609", {}) == [["instalar", "--apresentacao", "10/2026"]]
+    assert j.comandos("sisaih01", "202609", {})[0][:3] == ["sisaih01", "completo", "10/2026"]

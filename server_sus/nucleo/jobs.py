@@ -47,7 +47,8 @@ def comandos(etapa: str, comp: str, opcoes: dict) -> list[list[str]]:
     if etapa == "iniciar":
         return [["iniciar"], ["preparar"]]
     if etapa == "atualizar":
-        return [["instalar"]]
+        # o SISAIH01 mais novo pode ser de outra apresentação: instala a da competência do job
+        return [["instalar", "--apresentacao", _mm_aaaa(apresentacao(comp))]]
     if etapa == "sisaih01":
         return [["sisaih01", "completo", _mm_aaaa(apresentacao(comp)), "--confirmar", *sem_snap]]
     if etapa == "fpo":
