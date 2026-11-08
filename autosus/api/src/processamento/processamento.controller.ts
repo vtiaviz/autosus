@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
-import { ArrayNotEmpty, IsArray, IsIn, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsIn, IsString, Matches } from 'class-validator';
 import type { Response } from 'express';
 import { PADRAO_COMPETENCIA } from '../comum/competencia';
 import { ProcessamentoService } from './processamento.service';
@@ -13,6 +13,13 @@ class NovoProcessamento {
 
   @IsIn(['manual', 'automatico'])
   modoEnvio: 'manual' | 'automatico' = 'manual';
+}
+
+class Liberar {
+  /** AIHs aprovadas; vazio = não libera nenhuma e só continua o SIHD2 */
+  @IsArray()
+  @Matches(/^\d{12}-\d$/, { each: true, message: 'AIH no formato 152610159490-8' })
+  aihs!: string[];
 }
 
 class Transmitir {
@@ -77,6 +84,12 @@ export class ProcessamentoController {
   @Post(':aaaamm')
   iniciar(@Param('aaaamm') aaaamm: string, @Body() pedido: NovoProcessamento) {
     return this.processamento.iniciar(competencia(aaaamm), pedido.etapas, pedido.modoEnvio);
+  }
+
+  /** Decisão das AIHs bloqueadas no SIHD2: libera as aprovadas e continua (não transmite). */
+  @Post(':aaaamm/liberar')
+  liberar(@Param('aaaamm') aaaamm: string, @Body() pedido: Liberar) {
+    return this.processamento.liberar(competencia(aaaamm), pedido.aihs);
   }
 
   /** Envio real ao DATASUS: exige digitar a competência (MM/AAAA) como confirmação. */

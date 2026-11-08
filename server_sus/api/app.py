@@ -117,6 +117,7 @@ class NovoJob(BaseModel):
     sihd_manual: bool = Field(False, description="para nas AIHs bloqueadas (senão libera todas)")
     versao_sihd: int | None = None
     sihd_a_partir_de: str | None = Field(None, pattern=r"^[a-z_]{1,30}$")
+    aihs_liberar: list[str] | None = Field(None, description="etapa sihd_liberar: AIHs aprovadas (ex.: 152610159490-8)")
     sem_snapshot: bool = Field(False, description="não tira snapshot antes de SISAIH01, FPO e SIHD")
     confirmar_envio: bool = Field(False, description="obrigatório (true) para a etapa transmissor_enviar, "
                                                      "que transmite o .DTS ao DATASUS")

@@ -11,8 +11,18 @@ import { ETAPAS, Etapa, Passo, situacaoPorSistema } from './sistemas';
 
 const FINAIS = ['concluido', 'falhou', 'aguardando_decisao', 'cancelado', 'interrompido'];
 
+/** AIH bloqueada com pendência, como o robô lista na parada do SIHD2 (etapa "bloqueadas"). */
+export interface AihBloqueada {
+  aih: string;
+  motivo?: string | null;
+  bloqueio_liberacao?: string | null;
+  valor?: string | null;
+  [campo: string]: unknown;
+}
+
 export interface JobServidor {
   id: string;
+  bloqueadas?: AihBloqueada[];
   situacao: string;
   mensagem: string | null;
   passos: Passo[];
@@ -114,6 +124,8 @@ export class ProcessamentoService {
       throw new BadRequestException(`etapas inválidas: ${invalidas.join(', ') || '(nenhuma)'}`);
     if (etapas.includes('transmissor_enviar'))
       throw new BadRequestException('para transmitir use o botão Transmitir (POST /processamento/:aaaamm/transmitir)');
+    if (etapas.includes('sihd_liberar'))
+      throw new BadRequestException('para liberar AIHs use POST /processamento/:aaaamm/liberar');
     const lista = [...etapas] as Etapa[];
     const opcoes: Record<string, unknown> = {};
     if (lista.includes('sihd')) {
@@ -134,6 +146,29 @@ export class ProcessamentoService {
     if (!saidas.arquivos.some((a) => a.nome.toUpperCase().endsWith(`${aaaamm}.DTS`)))
       throw new ConflictException('não há .DTS desta competência no Server_SUS: rode o SIHD2 antes');
     return this.criarJob(aaaamm, ['iniciar', 'transmissor_enviar'], { confirmar_envio: true }, 'manual');
+  }
+
+  /** AIHs bloqueadas da última parada do SIHD2 nesta competência, se ela ainda espera decisão. */
+  private async decisao(aaaamm: string): Promise<{ jobId: string; bloqueadas: AihBloqueada[] } | null> {
+    const ultimo = await this.prisma.processamento.findFirst({ where: { aaaamm }, orderBy: { criadoEm: 'desc' } });
+    if (!ultimo || ultimo.situacao !== 'aguardando_decisao' || !ultimo.etapas.includes('sihd')) return null;
+    const job = await this.servidor.json<JobServidor>(`/jobs/${encodeURIComponent(ultimo.jobId)}`);
+    return job.bloqueadas?.length ? { jobId: ultimo.jobId, bloqueadas: job.bloqueadas } : null;
+  }
+
+  /**
+   * Decisão das AIHs bloqueadas pela tela: libera só as aprovadas e continua o SIHD2 da crítica em diante
+   * (as não aprovadas ficam bloqueadas e não são cobradas). Não transmite: o envio segue no botão Transmitir.
+   */
+  async liberar(aaaamm: string, aihs: string[]) {
+    const d = await this.decisao(aaaamm);
+    if (!d) throw new ConflictException('não há AIHs bloqueadas esperando decisão nesta competência');
+    const conhecidas = new Set(d.bloqueadas.map((b) => b.aih));
+    const fora = aihs.filter((a) => !conhecidas.has(a));
+    if (fora.length) throw new BadRequestException(`AIH(s) fora da lista de bloqueadas: ${fora.join(', ')}`);
+    const etapas = aihs.length ? ['iniciar', 'sihd_liberar', 'sihd'] : ['iniciar', 'sihd'];
+    const opcoes = { aihs_liberar: aihs.length ? aihs : undefined, sihd_manual: true, sihd_a_partir_de: 'criticar' };
+    return this.criarJob(aaaamm, etapas, opcoes, 'manual');
   }
 
   private async criarJob(aaaamm: string, etapas: string[], opcoes: Record<string, unknown>, modoEnvio: ModoEnvio) {
@@ -251,6 +286,12 @@ export class ProcessamentoService {
     }
     let entrada: unknown = null;
     let saidas: unknown = null;
+    let decisao: Awaited<ReturnType<ProcessamentoService['decisao']>> = null;
+    try {
+      decisao = await this.decisao(aaaamm);
+    } catch {
+      /* Server_SUS fora do ar */
+    }
     try {
       [entrada, saidas] = await Promise.all([
         this.servidor.json(`/competencias/${aaaamm}/arquivos`),
@@ -265,6 +306,7 @@ export class ProcessamentoService {
       sistemas: situacaoPorSistema(jobs),
       processamentos: jobs,
       progresso,
+      decisao,
       entrada,
       saidas,
     };

@@ -1106,6 +1106,8 @@ def sihd_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
                 for r in pend:
                     log.info("  %s | %s | %s | %s", r["aih"], r["motivo"] or "-", r["bloqueio_liberacao"] or "-", r["valor"])
                 if pend and modo == "manual":
+                    # uma linha só, para o Server_SUS mostrar a lista no AutoSUS (decisão pela tela)
+                    log.info("BLOQUEADAS: %s", json.dumps(pend, ensure_ascii=False))
                     log.warning("PAROU para você decidir as liberações. Libere as aprovadas com:\n"
                                 "  robo.bat sihd liberar <AIH> [<AIH> ...] --confirmar\n"
                                 "e continue com:\n  %s", retomar("bloqueadas"))

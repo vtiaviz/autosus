@@ -12,6 +12,7 @@ export const ETAPAS = [
   'atualizar',
   'sisaih01',
   'fpo',
+  'sihd_liberar',
   'sihd',
   'transmissor_testar',
   'transmissor_enviar',

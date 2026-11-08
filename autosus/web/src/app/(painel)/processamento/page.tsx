@@ -114,6 +114,71 @@ function Job({ p, progresso, aoCancelar }: { p: Processamento; progresso: string
   );
 }
 
+/** AIHs bloqueadas pelo SIHD2: o usuário marca as aprovadas, libera e o SIHD2 continua (sem transmitir). */
+function Decisao({ aaaamm, decisao, ocupado, aoLiberar }: {
+  aaaamm: string;
+  decisao: NonNullable<PainelProcessamento['decisao']>;
+  ocupado: boolean;
+  aoLiberar: (aihs: string[]) => void;
+}) {
+  const [marcadas, setMarcadas] = useState<Set<string>>(() => new Set(decisao.bloqueadas.map((b) => b.aih)));
+  useEffect(() => setMarcadas(new Set(decisao.bloqueadas.map((b) => b.aih))), [decisao.jobId, decisao.bloqueadas]);
+  const todas = marcadas.size === decisao.bloqueadas.length;
+  const alternar = (aih: string) =>
+    setMarcadas((m) => {
+      const n = new Set(m);
+      if (n.has(aih)) n.delete(aih);
+      else n.add(aih);
+      return n;
+    });
+  function confirmar() {
+    const lista = decisao.bloqueadas.map((b) => b.aih).filter((a) => marcadas.has(a));
+    const texto = lista.length
+      ? `Liberar ${lista.length} AIH(s) no SIHD2 da competência ${rotuloCompetencia(aaaamm)} e continuar o processamento?` +
+        (lista.length < decisao.bloqueadas.length ? ' As não marcadas continuam bloqueadas e não serão cobradas.' : '')
+      : `Não liberar nenhuma AIH e continuar o SIHD2 da competência ${rotuloCompetencia(aaaamm)}? As bloqueadas não serão cobradas.`;
+    if (window.confirm(texto)) aoLiberar(lista);
+  }
+  return (
+    <div className="cad-card" style={{ marginTop: 20, borderColor: 'var(--warning, #f0ad4e)' }}>
+      <div className="cad-card-head">
+        <h5><span className="material-symbols-outlined">gpp_maybe</span> AIHs bloqueadas esperando sua decisão ({decisao.bloqueadas.length})</h5>
+        <button className="btn-new" disabled={ocupado} onClick={confirmar}>
+          <span className="material-symbols-outlined">lock_open</span>
+          {marcadas.size ? ` Liberar ${marcadas.size} e continuar` : ' Continuar sem liberar'}
+        </button>
+      </div>
+      <div className="cad-card-body" style={{ paddingBottom: 18 }}>
+        <p className="texto-suave" style={{ marginTop: 0 }}>
+          Marque as AIHs aprovadas. O SIHD2 libera só essas e segue da crítica até o .DTS. Nada é transmitido: o envio continua pelo botão Transmitir.
+        </p>
+        <table className="sus-table">
+          <thead>
+            <tr>
+              <th style={{ width: 36 }}>
+                <input type="checkbox" checked={todas} aria-label="Marcar todas"
+                  onChange={() => setMarcadas(todas ? new Set() : new Set(decisao.bloqueadas.map((b) => b.aih)))} />
+              </th>
+              <th>AIH</th><th>Motivo</th><th>Bloqueio</th><th>Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {decisao.bloqueadas.map((b) => (
+              <tr key={b.aih} onClick={() => alternar(b.aih)} style={{ cursor: 'pointer' }}>
+                <td><input type="checkbox" checked={marcadas.has(b.aih)} onChange={() => alternar(b.aih)} onClick={(e) => e.stopPropagation()} aria-label={`Liberar ${b.aih}`} /></td>
+                <td className="cod">{b.aih}</td>
+                <td>{b.motivo || '-'}</td>
+                <td>{b.bloqueio_liberacao || '-'}</td>
+                <td className="num">{b.valor || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function Pagina() {
   const params = useSearchParams();
   const [aaaamm, setAaaamm] = useState(params.get('competencia') ?? competenciaPadrao());
@@ -314,6 +379,12 @@ function Pagina() {
           </table>
         </div>
       </div>
+
+      {painel?.decisao && !ativo && (
+        <Decisao aaaamm={aaaamm} decisao={painel.decisao} ocupado={ocupado}
+          aoLiberar={(aihs) => acao(() => api(`/processamento/${aaaamm}/liberar`, { method: 'POST', body: JSON.stringify({ aihs }) }),
+            aihs.length ? `Liberação de ${aihs.length} AIH(s) na fila; o SIHD2 continua em seguida.` : 'SIHD2 na fila, sem liberar AIHs.')} />
+      )}
 
       {ultimo && <Job p={ultimo} progresso={painel?.progresso ?? null} aoCancelar={() => acao(() => api(`/processamento/jobs/${ultimo.jobId}/cancelar`, { method: 'POST' }), 'Cancelamento pedido; o agente para no próximo passo.')} />}
 
