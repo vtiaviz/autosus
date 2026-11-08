@@ -146,3 +146,20 @@ def test_verificacao_impede_o_passo(tmp_path, saida):
     fim = esperar(jobs, jobs.criar("202608", ["fpo"], {})["id"])
     assert fim["situacao"] == "falhou" and "D:" in fim["mensagem"]
     assert robo.chamadas == []
+
+
+def test_envio_exige_confirmacao():
+    with pytest.raises(ValueError):
+        j.comandos("transmissor_enviar", "202608", {})
+    assert j.comandos("transmissor_enviar", "202608", {"confirmar_envio": True})[-1] == [
+        "transmissor", "enviar", "--confirmar"]
+
+
+def test_job_guarda_os_prints(tmp_path, saida):
+    def robo(args, ao_ler, parar, ao_iniciar):
+        ao_ler(r"  print da tela: C:\AutoSUS\server_sus\logs\tela_x_20261107.png")
+        ao_ler(r"  arquivo: C:\AutoSUS\server_sus\logs\transmissor_testar_msg1.png")
+        return 0
+    jobs = j.Jobs(tmp_path / "jobs", executor=robo)
+    fim = esperar(jobs, jobs.criar("202608", ["transmissor_testar"], {})["id"])
+    assert fim["imagens"] == ["tela_x_20261107.png", "transmissor_testar_msg1.png"]

@@ -3,13 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, dataBR, rotuloCompetencia } from '@/lib/api';
-import { Competencia, ROTULO_SITUACAO_COMPETENCIA } from '@/lib/tipos';
-
-const SISTEMAS = ['SISAIH01', 'FPO', 'SIHD2', 'Transmissor'];
+import { Competencia, ROTULO_SISTEMA, ROTULO_SITUACAO_COMPETENCIA, SistemaSituacao } from '@/lib/tipos';
 
 export default function Dashboard() {
   const [lista, setLista] = useState<Competencia[] | null>(null);
   const [erro, setErro] = useState('');
+  const [sistemas, setSistemas] = useState<SistemaSituacao[] | null>(null);
 
   useEffect(() => {
     api<Competencia[]>('/competencias').then(setLista).catch((e: Error) => setErro(e.message));
@@ -17,6 +16,10 @@ export default function Dashboard() {
 
   const hoje = new Date().toISOString().slice(0, 10);
   const aberta = lista?.find((c) => c.situacao === 'aberta');
+
+  useEffect(() => {
+    if (aberta) api<SistemaSituacao[]>(`/processamento/${aberta.aaaamm}/resumo`).then(setSistemas).catch(() => undefined);
+  }, [aberta]);
   const comItens = (lista ?? []).filter((c) => c.arquivos.baixados + c.arquivos.pendentes + c.programas.baixados + c.programas.pendentes > 0);
   // cronograma: da competência aberta (ou a mais recente encerrada) até as duas próximas
   const cronograma = (lista ?? [])
@@ -111,13 +114,19 @@ export default function Dashboard() {
       <div className="cad-card" style={{ marginTop: 20 }}>
         <div className="cad-card-head">
           <h5><span className="material-symbols-outlined">memory</span> Processamentos {aberta ? `da competência ${rotuloCompetencia(aberta.aaaamm)}` : ''}</h5>
-          <span className="texto-suave">Disponível na etapa 5</span>
+          {aberta && <Link className="btn-new" href={`/processamento?competencia=${aberta.aaaamm}`}><span className="material-symbols-outlined">open_in_new</span> Ver</Link>}
         </div>
         <div className="tabela-rolagem">
           <table className="sus-table">
-            <thead><tr>{SISTEMAS.map((s) => <th key={s}>{s}</th>)}</tr></thead>
+            <thead><tr>{(sistemas ?? []).map((s) => <th key={s.sistema}>{s.sistema}</th>)}</tr></thead>
             <tbody>
-              <tr>{SISTEMAS.map((s) => <td key={s}><span className="situacao neutra">Não iniciado</span></td>)}</tr>
+              <tr>
+                {(sistemas ?? []).map((s) => {
+                  const [rotulo, classe] = ROTULO_SISTEMA[s.situacao] ?? [s.situacao, 'neutra'];
+                  return <td key={s.sistema}><span className={`situacao ${classe}`}>{rotulo}</span></td>;
+                })}
+              </tr>
+              {lista && !aberta && <tr><td className="texto-suave">Nenhuma competência aberta agora.</td></tr>}
             </tbody>
           </table>
         </div>

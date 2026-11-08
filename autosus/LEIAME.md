@@ -21,11 +21,25 @@ e o visual do Prototipo H-SUS.
 ## Telas
 
 - **Dashboard**: competência aberta com abertura e fechamento, itens pendentes, atualizações por
-  competência, cronograma das próximas competências. Os processamentos chegam na etapa 5.
+  competência, cronograma das próximas competências e a situação de SISAIH01, FPO, SIHD2 e Transmissor.
 - **Atualizações**: arquivos (DSIHD017, FORNEC, IMPORT, TERCEIROS, TXTPROC, produção do WebAIH) e programas
   (SISAIH01, SIHD2, FPO, Transmissor, BDSIA) da competência escolhida. **Verificar agora** roda o
   downloader e mostra a saída dele.
-- **Processamento AIH**: só a lista dos passos por enquanto (etapa 5).
+- **Processamento AIH**: situação do Server_SUS (VM, agente, espaço no disco da VM), botões **Ligar servidor**,
+  **Atualizar sistemas**, **SISAIH01**, **FPO**, **SIHD2**, **Testar conexão**, **Transmitir** e
+  **Processar tudo**; o processamento em andamento com cada passo, o log do robô, os prints e o botão
+  **Cancelar**; os arquivos no servidor (**Enviar downloads**), os arquivos gerados e o histórico.
+
+### Envio pelo Transmissor
+
+- **Manual** (padrão): o SIHD2 libera as AIHs bloqueadas e para no .DTS. O envio só acontece pelo botão
+  **Transmitir**, que pede para digitar a competência (MM/AAAA) como confirmação.
+- **Automático**: o SIHD2 roda parando nas AIHs bloqueadas (críticas). Se terminar sem nenhuma, o mesmo
+  processamento transmite o .DTS. Se houver crítica, nada é enviado, o processamento fica "Com críticas" e
+  chega um aviso por e-mail dizendo que o envio passou para manual.
+- Todo processamento que termina (concluído, com críticas, falhou ou cancelado) manda um aviso pelo Windows
+  e por e-mail, com a mesma configuração do downloader (`downloads\config.yaml` e `downloads\.env`).
+- Só um processamento roda por vez. O SIHD2 leva de 4 a 5 horas.
 
 ## Como as peças conversam
 
@@ -48,7 +62,20 @@ GET  /api/competencias/:aaaamm
 POST /api/competencias/sincronizar
 GET  /api/atualizacoes/:aaaamm arquivos, programas e a última verificação
 POST /api/atualizacoes/:aaaamm/verificar   roda o downloader (um por vez)
+GET  /api/processamento/servidor            VM e agente do Server_SUS
+POST /api/processamento/servidor/ligar
+GET  /api/processamento/:aaaamm             sistemas, processamentos, arquivos no servidor e gerados
+GET  /api/processamento/:aaaamm/resumo      situação de cada sistema (Dashboard)
+POST /api/processamento/:aaaamm/arquivos    envia ao Server_SUS os arquivos baixados (SHA-256 conferido)
+POST /api/processamento/:aaaamm             {etapas, modoEnvio}: iniciar, atualizar, sisaih01, fpo, sihd, transmissor_testar
+POST /api/processamento/:aaaamm/transmitir  {confirmacao: "MM/AAAA"}: envio real do .DTS
+GET  /api/processamento/jobs/:id/log?desde=N
+GET  /api/processamento/jobs/:id/imagens/:nome
+POST /api/processamento/jobs/:id/cancelar
 ```
+
+O AutoSUS fala com o Server_SUS pela API dele (`SERVER_SUS_URL` e `SERVER_SUS_TOKEN` no `api\.env`, o mesmo
+token do `server_sus\.env`). O navegador nunca recebe esse token.
 
 ## Testes
 

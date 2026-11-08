@@ -27,7 +27,9 @@ from .config import PASTA
 
 log = logging.getLogger("robo")
 
-ORDEM = ["iniciar", "atualizar", "sisaih01", "fpo", "sihd", "transmissor_testar"]
+ORDEM = ["iniciar", "atualizar", "sisaih01", "fpo", "sihd", "transmissor_testar", "transmissor_enviar"]
+# a única etapa que manda algo para fora: só roda com "confirmar_envio": true no pedido
+ENVIO = "transmissor_enviar"
 FINAIS = {"concluido", "falhou", "aguardando_decisao", "cancelado", "interrompido"}
 COD_DECISAO = 3          # robo.py sihd completo --manual: AIHs bloqueadas esperando decisão
 
@@ -59,6 +61,10 @@ def comandos(etapa: str, comp: str, opcoes: dict) -> list[list[str]]:
         return [sihd + sem_snap]
     if etapa == "transmissor_testar":
         return [["transmissor", "preparar", _mm_aaaa(comp)], ["transmissor", "testar"]]
+    if etapa == ENVIO:
+        if opcoes.get("confirmar_envio") is not True:
+            raise ValueError("a transmissão para o DATASUS exige \"confirmar_envio\": true")
+        return [["transmissor", "preparar", _mm_aaaa(comp)], ["transmissor", "enviar", "--confirmar"]]
     raise ValueError(f"etapa desconhecida: {etapa}")
 
 
@@ -188,7 +194,7 @@ class Jobs:
         job = {"id": id_, "competencia": competencia, "apresentacao": apresentacao(competencia), "etapas": etapas,
                "opcoes": opcoes, "situacao": "na_fila", "criado": agora(), "ordem": time.time_ns(),
                "inicio": None, "fim": None,
-               "passo_atual": None, "passos": passos, "mensagem": None, "conferencia": None}
+               "passo_atual": None, "passos": passos, "mensagem": None, "conferencia": None, "imagens": []}
         (self.pasta / id_).mkdir()
         self._gravar(job)
         log.info("job criado: %s (%s, etapas %s)", id_, competencia, ", ".join(etapas))
@@ -249,6 +255,10 @@ class Jobs:
                 m = re.search(r"tarefa enviada: (\S+)", linha)
                 if m:
                     self._tarefa_agente = m.group(1)
+                # prints que o robô guardou em server_sus/logs: o AutoSUS mostra (resultado do Transmissor etc.)
+                img = re.search(r"(?:print da tela|arquivo): .*?([\w.-]+\.png)\s*$", linha)
+                if img and img.group(1) not in job.setdefault("imagens", []):
+                    job["imagens"].append(img.group(1))
 
             def ao_iniciar(proc) -> None:
                 self._proc = proc

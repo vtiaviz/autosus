@@ -101,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--testar-aviso", action="store_true", help="envia notificacao e e-mail de teste")
     ap.add_argument("--config", default=str(BASE / "config.yaml"))
     ap.add_argument("--json", metavar="ARQUIVO", help="grava o resultado (itens e situacao) em JSON, para o AutoSUS")
+    ap.add_argument("--avisar", nargs=2, metavar=("TITULO", "TEXTO"),
+                    help="so envia um aviso (Windows e e-mail); usado pelo AutoSUS no processamento")
     args = ap.parse_args(argv)
 
     carregar_env()
@@ -114,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
         ok = avisar(cfg_aviso, "AutoSUS - teste", "Se voce recebeu isto, os avisos funcionam.",
                     "Mensagem de teste do AutoSUS. Os avisos estao configurados corretamente.")
         return 0 if ok else 1
+    if args.avisar:
+        from .aviso import avisar
+        titulo, texto = args.avisar
+        return 0 if avisar(cfg_aviso, titulo, texto[:250], texto) else 1
 
     if args.diagnostico_cnes:
         from .portal_cnes import diagnosticar
