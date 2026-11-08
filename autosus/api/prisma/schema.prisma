@@ -1,0 +1,72 @@
+// AutoSUS - banco do app cliente (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  nome      String
+  senhaHash String   @map("senha_hash")
+  perfil    String   @default("administrador")
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  @@map("usuarios")
+}
+
+/// Competência de produção (AAAAMM) com as datas do cronograma do CNES.
+model Competencia {
+  aaaamm       String            @id
+  apresentacao String
+  /// "Disponibilização dos aplicativos de processamento"
+  abertura     DateTime?         @db.Date
+  /// "Envio da remessa do SIA/SIH"
+  fechamento   DateTime?         @db.Date
+  /// as 9 datas do cronograma: [{ rotulo, data }]
+  datas        Json              @default("[]")
+  atualizadoEm DateTime          @updatedAt @map("atualizado_em")
+  itens        ItemAtualizacao[]
+
+  @@map("competencias")
+}
+
+/// Situação de cada arquivo ou programa na última verificação do downloader.
+model ItemAtualizacao {
+  id           Int         @id @default(autoincrement())
+  competencia  Competencia @relation(fields: [aaaamm], references: [aaaamm])
+  aaaamm       String
+  nome         String
+  tipo         String // arquivo | programa
+  situacao     String // baixado | ja_existe | pendente | erro | simulado
+  arquivo      String      @default("")
+  versao       String      @default("")
+  detalhe      String      @default("")
+  tamanho      BigInt      @default(0)
+  sha256       String?
+  revisaoNova  Boolean     @default(false) @map("revisao_nova")
+  verificadoEm DateTime    @map("verificado_em")
+  enviadoEm    DateTime?   @map("enviado_em")
+
+  @@unique([aaaamm, nome])
+  @@map("itens_atualizacao")
+}
+
+/// Cada vez que o AutoSUS mandou o downloader verificar uma competência.
+model ExecucaoDownload {
+  id     Int       @id @default(autoincrement())
+  aaaamm String
+  inicio DateTime  @default(now())
+  fim    DateTime?
+  codigo Int?
+  /// últimas linhas da saída do downloader
+  saida  String    @default("")
+
+  @@map("execucoes_download")
+}

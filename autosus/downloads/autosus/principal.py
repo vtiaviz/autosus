@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import logging
 import os
 import sys
@@ -70,6 +71,24 @@ def montar_resumo(competencia: str, resultados: list[Resultado], destino: Path) 
     return "\n".join(linhas)
 
 
+def gravar_json(destino: Path, competencia: str, raiz: Path, simulado: bool, resultados: list[Resultado],
+                cfg: dict, man_comp: Manifesto, man_prog: Manifesto) -> None:
+    """Resultado da execucao para o AutoSUS: um item por arquivo/programa, com o que o manifesto sabe."""
+    programas = {i["nome"] for i in (cfg.get("programas") or []) + (cfg.get("programas_http") or [])}
+    itens = []
+    for r in resultados:
+        tipo = "programa" if r.nome in programas else "arquivo"
+        reg = (man_prog if tipo == "programa" else man_comp).item(r.nome) or {}
+        itens.append({"nome": r.nome, "tipo": tipo, "situacao": r.status, "arquivo": r.arquivo or reg.get("arquivo", ""),
+                      "detalhe": r.detalhe, "revisao_nova": r.revisao_nova,
+                      "tamanho": r.tamanho or reg.get("tamanho") or 0, "sha256": reg.get("sha256"),
+                      "versao": reg.get("versao") or ""})
+    dados = {"competencia": competencia, "pasta": str(raiz), "simulado": simulado,
+             "gerado_em": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "itens": itens}
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="autosus", description="Download mensal dos arquivos SIH/SIA/CNES.")
     ap.add_argument("competencia", nargs="?", help="AAAAMM (padrao: mes anterior)")
@@ -81,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--diagnostico-cnes", action="store_true", help="lista os campos da tela de login do CNES")
     ap.add_argument("--testar-aviso", action="store_true", help="envia notificacao e e-mail de teste")
     ap.add_argument("--config", default=str(BASE / "config.yaml"))
+    ap.add_argument("--json", metavar="ARQUIVO", help="grava o resultado (itens e situacao) em JSON, para o AutoSUS")
     args = ap.parse_args(argv)
 
     carregar_env()
@@ -162,6 +182,11 @@ def main(argv: list[str] | None = None) -> int:
 
     resumo = montar_resumo(competencia, resultados, raiz)
     log.info("\n%s", resumo)
+    # o AutoSUS (api) le estado\AAAAMM.json para mostrar as atualizacoes, venha a execucao de onde vier
+    # (tarefa agendada, autosus.bat ou o proprio AutoSUS); a simulacao so grava com --json
+    json_destino = Path(args.json) if args.json else (None if args.simular else BASE / "estado" / f"{competencia}.json")
+    if json_destino:
+        gravar_json(json_destino, competencia, raiz, args.simular, resultados, cfg, man_comp, man_prog)
 
     if not args.simular:
         # salva o manifesto mesmo que algo tenha dado errado acima

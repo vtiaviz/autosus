@@ -36,3 +36,13 @@ ferramentas/converte_webAIH/*
 # Jobs de processamento do Server_SUS (log e situacao de cada execucao)
 server_sus/jobs/
 .pytest_cache/
+
+# Resultado da ultima execucao do downloader por competencia (lido pelo AutoSUS)
+autosus/downloads/estado/
+
+# Node (autosus/api e autosus/web)
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
