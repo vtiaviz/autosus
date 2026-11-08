@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import http.cookiejar
 import logging
-import html
 import re
 import time
 import urllib.parse
@@ -106,9 +105,10 @@ def baixar_webaih(cfg: dict, competencia: str, pasta: Path, manifesto: Manifesto
             arq = pasta_logs / f"webaih_{competencia}_{time.strftime('%Y%m%d_%H%M%S')}.html"
             arq.write_text(pagina, encoding="utf-8")
             m = re.search(r"(\d+)\s*AIH\(s\) com erro", pagina)
-            alerta = re.search(r'class="alert alert-danger"[^>]*>\s*([^<]+)<', pagina)
-            if alerta:
-                det = f"WebAIH: {html.unescape(alerta.group(1)).strip()}"
+            alerta = re.search(r'class="alert alert-danger"[^>]*>(.*?)</div>', pagina, re.S)
+            texto_alerta = " ".join(unescape(re.sub(r"<[^>]+>", " ", alerta.group(1))).split()) if alerta else ""
+            if texto_alerta:
+                det = f"WebAIH: {texto_alerta} (pagina em logs\\{arq.name})"
             elif m:
                 det = f"{m.group(1)} AIH(s) com erro no WebAIH: corrija la (relatorio em logs\\{arq.name})"
             elif "Não há formulários" in pagina or "N&atilde;o h&aacute; formul" in pagina:

@@ -84,7 +84,7 @@ def gravar_json(destino: Path, competencia: str, raiz: Path, simulado: bool, res
                       "tamanho": r.tamanho or reg.get("tamanho") or 0, "sha256": reg.get("sha256"),
                       "versao": reg.get("versao") or ""})
     dados = {"competencia": competencia, "pasta": str(raiz), "simulado": simulado,
-             "gerado_em": dt.datetime.now().isoformat(timespec="seconds"), "itens": itens}
+             "gerado_em": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "itens": itens}
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
 
