@@ -27,11 +27,12 @@ from .config import PASTA
 
 log = logging.getLogger("robo")
 
-ORDEM = ["iniciar", "atualizar", "sisaih01", "fpo", "sihd", "transmissor_testar", "transmissor_enviar"]
+ORDEM = ["iniciar", "atualizar", "sisaih01", "fpo", "sihd_liberar", "sihd", "transmissor_testar", "transmissor_enviar"]
 # a única etapa que manda algo para fora: só roda com "confirmar_envio": true no pedido
 ENVIO = "transmissor_enviar"
 FINAIS = {"concluido", "falhou", "aguardando_decisao", "cancelado", "interrompido"}
 COD_DECISAO = 3          # robo.py sihd completo --manual: AIHs bloqueadas esperando decisão
+AIH = re.compile(r"^\d{12}-\d$")
 
 
 def _mm_aaaa(aaaamm: str) -> str:
@@ -53,6 +54,12 @@ def comandos(etapa: str, comp: str, opcoes: dict) -> list[list[str]]:
         return [["sisaih01", "completo", _mm_aaaa(comp), "--confirmar", *sem_snap]]
     if etapa == "fpo":
         return [["fpo", "completo", _mm_aaaa(comp), *sem_snap]]
+    if etapa == "sihd_liberar":
+        # só as AIHs que o usuário aprovou na tela (a lista vem da parada em "bloqueadas")
+        aihs = opcoes.get("aihs_liberar") or []
+        if not aihs or not all(isinstance(a, str) and AIH.match(a) for a in aihs):
+            raise ValueError("sihd_liberar exige \"aihs_liberar\": números de AIH no formato 152610159490-8")
+        return [["sihd", "liberar", *aihs, "--confirmar"]]
     if etapa == "sihd":
         sihd = ["sihd", "completo", _mm_aaaa(comp), "--confirmar", "--manual" if opcoes.get("sihd_manual") else "--auto"]
         if opcoes.get("versao_sihd"):
@@ -257,6 +264,12 @@ class Jobs:
                 if m:
                     self._tarefa_agente = m.group(1)
                 # prints que o robô guardou em server_sus/logs: o AutoSUS mostra (resultado do Transmissor etc.)
+                # parada para decisão no SIHD2: a lista das AIHs bloqueadas vai para o job (o AutoSUS mostra)
+                if linha.startswith("BLOQUEADAS: "):
+                    try:
+                        job["bloqueadas"] = json.loads(linha[len("BLOQUEADAS: "):])
+                    except ValueError:
+                        pass
                 img = re.search(r"(?:print da tela|arquivo): .*?([\w.-]+\.png)\s*$", linha)
                 if img and img.group(1) not in job.setdefault("imagens", []):
                     job["imagens"].append(img.group(1))

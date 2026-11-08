@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -163,3 +164,22 @@ def test_job_guarda_os_prints(tmp_path, saida):
     jobs = j.Jobs(tmp_path / "jobs", executor=robo)
     fim = esperar(jobs, jobs.criar("202608", ["transmissor_testar"], {})["id"])
     assert fim["imagens"] == ["tela_x_20261107.png", "transmissor_testar_msg1.png"]
+
+
+def test_bloqueadas_vao_para_o_job(tmp_path, saida):
+    lista = [{"aih": "152610159490-8", "motivo": "SOLICITAÇÃO DE LIBERAÇÃO", "valor": "R$ 416,39"}]
+
+    def robo(args, ao_ler, parar, ao_iniciar):
+        ao_ler("BLOQUEADAS: " + json.dumps(lista, ensure_ascii=False))
+        return 3
+    jobs = j.Jobs(tmp_path / "jobs", executor=robo)
+    job = esperar(jobs, jobs.criar("202609", ["sihd"], {"sihd_manual": True})["id"])
+    assert job["situacao"] == "aguardando_decisao" and job["bloqueadas"] == lista
+
+
+def test_liberar_so_as_aihs_aprovadas():
+    assert j.comandos("sihd_liberar", "202609", {"aihs_liberar": ["152610159490-8", "152610159526-0"]}) == [
+        ["sihd", "liberar", "152610159490-8", "152610159526-0", "--confirmar"]]
+    for ruim in ([], ["15261015949"], ["1;del"]):
+        with pytest.raises(ValueError):
+            j.comandos("sihd_liberar", "202609", {"aihs_liberar": ruim})

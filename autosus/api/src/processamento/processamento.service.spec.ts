@@ -86,3 +86,42 @@ describe('ProcessamentoService.transmitir', () => {
     });
   });
 });
+
+describe('ProcessamentoService.liberar', () => {
+  const parada = { aaaamm: '202609', jobId: 'jobD', situacao: 'aguardando_decisao', etapas: ['iniciar', 'sihd'] };
+  const bloqueadas = [{ aih: '152610159490-8' }, { aih: '152610159526-0' }];
+
+  function comDecisao() {
+    const m = montar();
+    // 1ª consulta: a última parada (decisão); 2ª: nenhum processamento ativo
+    m.prisma.processamento.findFirst.mockResolvedValueOnce(parada).mockResolvedValueOnce(null);
+    m.svc['servidor'].json = jest.fn((caminho: string, init?: RequestInit) => {
+      m.pedidos.push({ caminho, corpo: init?.body ? JSON.parse(init.body as string) : undefined });
+      if (caminho === '/jobs/jobD') return Promise.resolve({ id: 'jobD', bloqueadas });
+      return Promise.resolve({ id: 'job2', situacao: 'na_fila', passos: [] });
+    }) as never;
+    return m;
+  }
+
+  it('libera só as aprovadas e continua o SIHD2 da crítica, sem transmitir', async () => {
+    const { svc, pedidos } = comDecisao();
+    await svc.liberar('202609', ['152610159490-8']);
+    expect(pedidos[1].corpo).toEqual({
+      competencia: '202609',
+      etapas: ['iniciar', 'sihd_liberar', 'sihd'],
+      aihs_liberar: ['152610159490-8'],
+      sihd_manual: true,
+      sihd_a_partir_de: 'criticar',
+    });
+  });
+
+  it('não aceita AIH fora da lista', async () => {
+    const { svc } = comDecisao();
+    await expect(svc.liberar('202609', ['999999999999-9'])).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('sem parada esperando decisão, recusa', async () => {
+    const { svc } = montar();
+    await expect(svc.liberar('202609', [])).rejects.toBeInstanceOf(ConflictException);
+  });
+});

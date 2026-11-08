@@ -24,7 +24,7 @@ Comandos (robo.bat <comando>):
                              grava os controles e fecha cada uma SEM executar nada
   sisaih01 excluir MM/AAAA --confirmar [--sem-snapshot]
                              apaga a produção da competência aberta (snapshot antes; --sem-snapshot
-                             reaproveita um snapshot antes_excluir_AAAAMM_* que já exista)
+                             reaproveita um snapshot antes_excluir_compAAAAMM_* que já exista)
   sisaih01 importar [arquivo]            importa a produção (confere a competência do arquivo); sem
                              arquivo, usa o baixado do WebAIH: <downloads>/AAAA-MM/SIH/AAAAMM_SISAIH01_*.txt
   sisaih01 consistir | apurar            roda a consistência / a prévia e grava o histórico
@@ -177,9 +177,27 @@ def trazer_arquivos(fila: Fila, resposta: dict, pasta_logs: Path) -> None:
             log.info("  arquivo: %s", pasta_logs / nome)
 
 
+def esperar_agente(fila: Fila, vbox: "VBox", limite: float = 120) -> bool:
+    """Logo depois de um snapshot com a VM ligada, ela fica congelada enquanto a memória é gravada e o
+    batimento do agente atrasa: espera ele voltar (com a VM ligada) antes de desistir."""
+    if fila.agente_vivo():
+        return True
+    log.info("Agente sem sinal recente; esperando até %d s (a VM pode estar terminando um snapshot)...", limite)
+    fim = time.time() + limite
+    while time.time() < fim:
+        if vbox.estado() == "paused":
+            log.warning("A VM está pausada; retomando.")
+            vbox.retomar()
+        time.sleep(5)
+        if fila.agente_vivo():
+            log.info("Agente respondendo de novo.")
+            return True
+    return False
+
+
 def executar(fila: Fila, vbox: "VBox", pasta_logs: Path, tipo: str, limite: float, rotulo: str, **parametros):
     """Envia uma tarefa, espera, traz os arquivos e tira um print no final."""
-    if not fila.agente_vivo():
+    if not esperar_agente(fila, vbox):
         log.error("Agente sem sinal. Rode 'robo.bat iniciar'.")
         return None
     # com o disco cheio a VirtualBox pausa a VM no meio da gravação (já corrompeu o AIH.vbox uma vez):
@@ -1088,6 +1106,8 @@ def sihd_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
                 for r in pend:
                     log.info("  %s | %s | %s | %s", r["aih"], r["motivo"] or "-", r["bloqueio_liberacao"] or "-", r["valor"])
                 if pend and modo == "manual":
+                    # uma linha só, para o Server_SUS mostrar a lista no AutoSUS (decisão pela tela)
+                    log.info("BLOQUEADAS: %s", json.dumps(pend, ensure_ascii=False))
                     log.warning("PAROU para você decidir as liberações. Libere as aprovadas com:\n"
                                 "  robo.bat sihd liberar <AIH> [<AIH> ...] --confirmar\n"
                                 "e continue com:\n  %s", retomar("bloqueadas"))
@@ -1225,7 +1245,8 @@ def cmd_sisaih01(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
             log.error("A exclusão apaga a produção da competência %s no SISAIH01. Repita com --confirmar.",
                       comp_de(sessao))
             return 2
-        prefixo = f"antes_excluir_{sessao[3:]}{sessao[:2]}_"
+        comp = comp_de(sessao)
+        prefixo = f"antes_excluir_comp{comp[3:]}{comp[:2]}_"     # ex.: antes_excluir_comp202609_
         if "--sem-snapshot" in args.extra:
             anteriores = [n for n in vbox.snapshots() if n.startswith(prefixo)]
             if not anteriores:

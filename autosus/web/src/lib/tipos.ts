@@ -101,12 +101,21 @@ export interface ArquivoServidor {
   modificado: string;
 }
 
+export interface AihBloqueada {
+  aih: string;
+  motivo?: string | null;
+  bloqueio_liberacao?: string | null;
+  valor?: string | null;
+}
+
 export interface PainelProcessamento {
   aaaamm: string;
   apresentacao: string;
   sistemas: SistemaSituacao[];
   processamentos: Processamento[];
   progresso: string | null;
+  /** parada do SIHD2 nas AIHs bloqueadas, esperando a decisão do usuário */
+  decisao: { jobId: string; bloqueadas: AihBloqueada[] } | null;
   entrada: {
     completo: boolean;
     itens: { item: string; arquivo: ArquivoServidor | null }[];
@@ -140,6 +149,7 @@ export const ROTULO_ETAPA: Record<string, string> = {
   atualizar: 'Atualizar sistemas',
   sisaih01: 'SISAIH01',
   fpo: 'FPO',
+  sihd_liberar: 'Liberar AIHs',
   sihd: 'SIHD2',
   transmissor_testar: 'Transmissor (testar conexão)',
   transmissor_enviar: 'Transmissor (enviar)',

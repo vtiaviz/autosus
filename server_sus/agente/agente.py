@@ -22,7 +22,7 @@ import threading
 import time
 import traceback
 
-VERSAO = "1.22.7"
+VERSAO = "1.22.8"
 COMPARTILHAMENTO = os.environ.get("AUTOSUS_COMPARTILHAMENTO", "AIH")
 RAIZ = os.environ.get("AUTOSUS_RAIZ", r"\\VBOXSVR\%s\_robo" % COMPARTILHAMENTO)
 INTERVALO = 3          # segundos entre verificações da fila
@@ -1437,7 +1437,7 @@ def tarefa_fpo_mapear_telas(p, pasta_res):
     exe = achar_executavel(p["executavel"])
     pid = pid_do_executavel(exe) if exe else None
     principal = fpo_principal(pid) if pid else None
-    if principal is None or len(principal.menu_items()) <= 2:
+    if principal is None or itens_menu(principal) <= 2:
         raise RuntimeError("o FPO não está aberto com login feito (rode 'robo.bat fpo abrir')")
     resumo, partes, arquivos = [], [], []
     nome = "telas_fpo_%s.txt" % dt.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1482,7 +1482,7 @@ def fpo_contexto(p):
     exe = achar_executavel(p["executavel"])
     pid = pid_do_executavel(exe) if exe else None
     principal = fpo_principal(pid) if pid else None
-    if principal is None or len(principal.menu_items()) <= 2:
+    if principal is None or itens_menu(principal) <= 2:
         raise RuntimeError("o FPO não está aberto com login feito (rode 'robo.bat fpo abrir')")
     return pid, principal
 
@@ -1882,6 +1882,15 @@ def tarefa_fpo_fechar(p, pasta_res):
     return {"ok": True, "dados": {"eventos": eventos}}
 
 
+def itens_menu(janela):
+    """Quantos itens tem o menu da janela. Logo depois do login o FPO remonta o menu e o Windows
+    responde 'Parâmetro incorreto' (erro 87) no GetMenuItemInfo: conta como menu ainda não pronto."""
+    try:
+        return len(janela.menu_items())
+    except Exception:
+        return 0
+
+
 def tarefa_fpo_abrir(p, pasta_res):
     """Abre o FPO e faz o login; em caso de parada devolve o que registrou até ali (mensagens e imagens)."""
     estado = {"eventos": [], "registro": [], "imagens": []}
@@ -1920,7 +1929,7 @@ def _fpo_abrir(p, pasta_res, estado):
                 login = (w, sorted(campos, key=lambda c: c.rectangle().left))
                 break
         principal = fpo_principal(pid)
-        if login is None and principal is not None and len(principal.menu_items()) > 2:
+        if login is None and principal is not None and itens_menu(principal) > 2:
             eventos.append("FPO já estava com login feito")
             break
         time.sleep(1)
@@ -1948,7 +1957,7 @@ def _fpo_abrir(p, pasta_res, estado):
             registro.append("#" * 80 + "\nJANELA %d: %r classe=%s %s\n%s" % (
                 n, w.window_text(), w.class_name(), ("texto: %r" % texto) if texto else "", controles_da_janela(w, 4)))
     principal = fpo_principal(pid)
-    if principal is None or len(principal.menu_items()) <= 2 or login:
+    if principal is None or itens_menu(principal) <= 2 or login:
         # Depois de uma atualização do FPO, o primeiro login atualiza o banco ("Aguarde... Atualização do
         # Banco de Dados") e mostra a tela "Backup e Restore do banco". O robô não clica em nada nela:
         # espera o FPO terminar sozinho, registrando o que aparece; se ficar parado, devolve para decisão.
@@ -1966,7 +1975,7 @@ def _fpo_abrir(p, pasta_res, estado):
                 continue
             outras = [w for w in janelas_do_processo(pid) if w.class_name() != "TF_GAMENU" and w.handle != tela_login]
             login_aberto = tela_login is not None and _user32().IsWindow(tela_login) and _user32().IsWindowVisible(tela_login)
-            if principal is not None and len(principal.menu_items()) > 2 and not login_aberto and not outras:
+            if principal is not None and itens_menu(principal) > 2 and not login_aberto and not outras:
                 break
             texto = " | ".join("%s: %s" % (w.window_text(), " ".join(
                 (ler_texto(c.handle, 500) or "").split())[-200:]) for w in outras
