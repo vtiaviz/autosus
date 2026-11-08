@@ -9,21 +9,23 @@ Comandos (robo.bat <comando>):
   snapshots                  lista os snapshots, o tamanho da pasta deles e o espaço livre
   apagar_snapshot <nome...> --confirmar   apaga pontos de retorno (libera disco; a VM atual não muda)
   restaurar <nome> --confirmar   desliga a VM e volta ao snapshot (perde o que foi feito depois dele)
-  versoes                    instaladores baixados e a apresentação de cada versão já conhecida
-  instalar [SISAIH01 SIHD2] [--versao NNNN] [--pasta "C:\\..."]
+  versoes                    instaladores baixados e a competência de cada versão do SISAIH01 já conhecida
+  instalar [SISAIH01 SIHD2] [--versao NNNN] [--competencia MM/AAAA] [--pasta "C:\\..."]
                              instala sem telas a maior versão baixada (ou a versão indicada); --pasta
-                             procura os instaladores também nessa pasta
+                             procura os instaladores também nessa pasta; --competencia: do SISAIH01,
+                             a versão mais nova dessa competência (lê o sisaih01_leiame.txt do DATASUS
+                             e baixa a que faltar)
   pacotes                    baixa o pywinauto e o pillow (no host) e instala na VM, sem internet na VM
   pacotes --reinstalar pillow  reinstala à força um pacote danificado na VM
   inspecionar [titulo]       grava a árvore de controles das janelas abertas na VM (mapeamento)
-  sisaih01 abrir [MM/AAAA]   abre o SISAIH01 (na apresentação indicada), faz login e grava a inspeção
+  sisaih01 abrir [MM/AAAA]   abre o SISAIH01 na competência indicada, faz login e grava a inspeção
   sisaih01 menus             grava o menu completo do SISAIH01 (com o programa já aberto)
   sisaih01 telas             abre as telas de excluir/importar/consistir/apurar/exportar/relatório,
                              grava os controles e fecha cada uma SEM executar nada
   sisaih01 excluir MM/AAAA --confirmar [--sem-snapshot]
-                             apaga a produção da apresentação aberta (snapshot antes; --sem-snapshot
+                             apaga a produção da competência aberta (snapshot antes; --sem-snapshot
                              reaproveita um snapshot antes_excluir_AAAAMM_* que já exista)
-  sisaih01 importar [arquivo]            importa a produção (confere a apresentação do arquivo); sem
+  sisaih01 importar [arquivo]            importa a produção (confere a competência do arquivo); sem
                              arquivo, usa o baixado do WebAIH: <downloads>/AAAA-MM/SIH/AAAAMM_SISAIH01_*.txt
   sisaih01 consistir | apurar            roda a consistência / a prévia e grava o histórico
   sisaih01 exportar                      exporta para o SIHD (Secretaria) -> pasta processamento/saida/AAAAMM
@@ -317,14 +319,89 @@ def instaladores(origem: Path, padrao: str) -> list[tuple[int, Path]]:
     return sorted((int(m.group("versao")), p) for p in origem.glob("*") if (m := rx.match(p.name)))
 
 
+def ler_leiame_sisaih01(texto: str) -> dict[str, str]:
+    """sisaih01_leiame.txt do DATASUS -> {versão: apresentação}. Cada versão traz
+    'VERSÃO 25.41' e, logo abaixo, 'APRESENTAÇÃO PADRAO NA TELA DE LOGIN DESSA VERSÃO : 11/2026'."""
+    blocos = re.split(r"VERS[ÃA]O\s+(\d{2})\.(\d{2})\b", texto, flags=re.IGNORECASE)
+    versoes = {}
+    for maior, menor, corpo in zip(blocos[1::3], blocos[2::3], blocos[3::3]):
+        m = re.search(r"APRESENTA[ÇC][ÃA]O\s+PADR[ÃA]O\s+NA\s+TELA\s+DE\s+LOGIN.*?:\s*((?:0[1-9]|1[0-2])/\d{4})",
+                      corpo, flags=re.IGNORECASE)
+        if m:
+            versoes.setdefault(maior + menor, m.group(1))     # o leiame vem do mais novo para o mais antigo
+    return versoes
+
+
+def item_sisaih01_ftp(cfg) -> dict:
+    """Onde o downloader do AutoSUS busca o SISAIH01 (autosus/downloads/config.yaml)."""
+    for item in cfg["_autosus"].get("programas") or []:
+        if item["nome"].upper() == "SISAIH01":
+            return item
+    raise RuntimeError("SISAIH01 não está em programas no config.yaml do AutoSUS")
+
+
+def atualizar_versoes_sisaih01(cfg) -> dict[str, str]:
+    """Lê o sisaih01_leiame.txt no FTP do DATASUS e anota a apresentação de cada versão em
+    estado_vm.json. O que o robô já viu na tela de login vale mais que o leiame."""
+    from autosus.fonte_ftp import _com_tentativas
+    item = item_sisaih01_ftp(cfg)
+    partes = []
+
+    def baixar(ftp):
+        ftp.cwd(item["pasta"])
+        ftp.retrbinary("RETR sisaih01_leiame.txt", partes.append)
+
+    _com_tentativas(item["host"], {**(cfg["_autosus"].get("ftp") or {}), "tentativas": 2}, baixar)
+    do_leiame = ler_leiame_sisaih01(b"".join(partes).decode("cp1252", errors="replace"))
+    if not do_leiame:
+        raise RuntimeError("sisaih01_leiame.txt sem versões reconhecíveis")
+    estado = ler_estado()
+    conhecidas = estado.setdefault("apresentacao_por_versao", {}).setdefault("SISAIH01", {})
+    for versao, apres in do_leiame.items():
+        conhecidas.setdefault(versao, apres)
+    gravar_estado(estado)
+    return do_leiame
+
+
+def baixar_sisaih01(cfg, versao: str) -> bool:
+    """Baixa sisaih01_ver<versao>.exe do FTP para a pasta de programas do AutoSUS (o mesmo do --versao)."""
+    from autosus.fonte_ftp import verificar_programa
+    from autosus.manifesto import Manifesto
+    pasta = pasta_downloads(cfg) / "programas"
+    r = verificar_programa(item_sisaih01_ftp(cfg), pasta, Manifesto(pasta / "manifesto.json"),
+                           cfg["_autosus"].get("ftp") or {}, False, versao)
+    log.info("SISAIH01 %s: %s %s", versao, r.status, r.detalhe or r.arquivo or "")
+    return r.status in ("baixado", "ja_existe")
+
+
+def versao_sisaih01_para(lista: list[tuple[int, Path]], apres: str) -> list[tuple[int, Path]]:
+    """Instaladores do SISAIH01 que servem para a apresentação MM/AAAA (= competência + 1 mês).
+
+    Cada versão do SISAIH01 só processa uma competência (ex.: 2520 = competência 08/2026, 2541 = 10/2026),
+    então a mais nova nem sempre serve. Usa as versões já conhecidas (estado_vm.json); se nenhuma é
+    dessa competência, tenta as que ainda não foram abertas nenhuma vez (o abrir confere e anota)."""
+    conhecidas = ler_estado().get("apresentacao_por_versao", {}).get("SISAIH01", {})
+    certas = [x for x in lista if conhecidas.get(str(x[0])) == apres]
+    return certas or [x for x in lista if str(x[0]) not in conhecidas]
+
+
 def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
     versao = None
     pasta_extra = None
+    apres = None
     extra = list(args.extra)
     if "--versao" in extra:
         i = extra.index("--versao")
         versao = int(extra[i + 1])
         del extra[i:i + 2]
+    if "--competencia" in extra:                 # SISAIH01: a versão mais nova dessa competência
+        i = extra.index("--competencia")
+        comp = extra[i + 1]
+        del extra[i:i + 2]
+        if not competencia_valida(comp):
+            log.error("Competência inválida: %s (use MM/AAAA)", comp)
+            return 2
+        apres = apres_de(comp)
     if "--pasta" in extra:                       # instaladores guardados em outra pasta (ex.: Produção 08-2026)
         i = extra.index("--pasta")
         pasta_extra = Path(extra[i + 1])
@@ -348,6 +425,36 @@ def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
             lista = sorted(lista + instaladores(pasta_extra, prog["padrao"]))
         if versao:
             lista = [x for x in lista if x[0] == versao]
+        elif apres and nome == "SISAIH01":
+            try:
+                do_leiame = atualizar_versoes_sisaih01(cfg)
+            except Exception as e:                   # sem FTP: segue com as versões já conhecidas
+                log.warning("SISAIH01: não consegui ler o sisaih01_leiame.txt no FTP (%s)", e)
+                do_leiame = {}
+            conhecidas = ler_estado().get("apresentacao_por_versao", {}).get("SISAIH01", {})
+            baixadas = {str(v) for v, _ in lista}
+            # a maior versão dessa competência no leiame (ex.: 2531 para 09/2026); baixa se faltar
+            certas = sorted((v for v, a in conhecidas.items() if a == apres and v in do_leiame), key=int)
+            if certas and certas[-1] not in baixadas:
+                log.info("SISAIH01: a versão mais nova da competência %s é a %s; baixando do FTP do DATASUS...",
+                         comp_de(apres), certas[-1])
+                if baixar_sisaih01(cfg, certas[-1]):
+                    lista = instaladores(origem, prog["padrao"])
+                    if pasta_extra:
+                        lista = sorted(lista + instaladores(pasta_extra, prog["padrao"]))
+            servem = versao_sisaih01_para(lista, apres)
+            if not servem:
+                # não instala a mais nova no lugar: o sisaih01 completo para logo, com a mesma explicação
+                log.warning("SISAIH01: nenhum instalador baixado é da competência %s (baixados: %s). Baixe a "
+                            "versão do SISAIH01 dessa competência e coloque em %s. O SISAIH01 da VM "
+                            "fica como está.", comp_de(apres),
+                            ", ".join(f"{v} = competência {comp_de(conhecidas[str(v)]) if str(v) in conhecidas else '?'}"
+                                      for v, _ in lista) or "nenhum", origem)
+                continue
+            if conhecidas.get(str(servem[-1][0])) != apres:
+                log.warning("SISAIH01: a versão %d ainda não foi aberta; o abrir confere se ela é da competência %s.",
+                            servem[-1][0], comp_de(apres))
+            lista = servem
         if not lista:
             log.error("%s: instalador %s não encontrado em %s.", nome, f"da versão {versao}" if versao else "", origem)
             return 1
@@ -355,6 +462,9 @@ def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
         shutil.copy2(arq, fila.raiz / "entrada" / arq.name)
         log.info("%s: %s copiado para a VM", nome, arq.name)
         itens.append({"programa": nome, "arquivo": f"entrada/{arq.name}", "executavel": prog["executavel"]})
+    if not itens:
+        log.error("Nada para instalar.")
+        return 1
 
     if not fila.agente_vivo():
         log.error("Agente sem sinal. Rode 'robo.bat iniciar'.")
@@ -465,7 +575,26 @@ def mostrar_resposta(resp: dict | None) -> int:
 
 
 def sessao_sisaih01() -> str | None:
+    """Apresentação (MM/AAAA) em que o SISAIH01 foi aberto; para o usuário, mostre comp_de(sessao)."""
     return ler_estado().get("sisaih01_sessao")
+
+
+# O usuário só fala em competência. "Apresentação" (competência + 1 mês) é um detalhe do SISAIH01:
+# é o que vai na tela de login, nos registros do arquivo do WebAIH e no nome do .Zip exportado.
+def apres_de(comp: str) -> str:
+    """Competência MM/AAAA -> apresentação MM/AAAA do SISAIH01."""
+    mm, aaaa = int(comp[:2]), int(comp[3:])
+    return f"01/{aaaa + 1}" if mm == 12 else f"{mm + 1:02d}/{aaaa}"
+
+
+def comp_de(apres: str) -> str:
+    """Apresentação MM/AAAA do SISAIH01 -> competência MM/AAAA."""
+    mm, aaaa = int(apres[:2]), int(apres[3:])
+    return f"12/{aaaa - 1}" if mm == 1 else f"{mm - 1:02d}/{aaaa}"
+
+
+def competencia_valida(txt: str) -> bool:
+    return bool(re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", txt or ""))
 
 
 def _opcao(extra: list, nome: str):
@@ -1032,17 +1161,27 @@ def fpo_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args, mes: int, an
 def sisaih01_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
     """abrir -> excluir -> importar -> consistir (para se houver rejeitada) -> apurar -> exportar."""
     resto = [a for a in args.extra[1:] if not a.startswith("--")]
-    if not resto or not re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", resto[0]):
-        log.error("Uso: robo.bat sisaih01 completo MM/AAAA [arquivo] --confirmar [--sem-snapshot]")
+    if not resto or not competencia_valida(resto[0]):
+        log.error("Uso: robo.bat sisaih01 completo MM/AAAA [arquivo] --confirmar [--sem-snapshot]  "
+                  "(MM/AAAA = competência)")
         return 2
+    comp, arquivo = resto[0], resto[1:]
     if "--confirmar" not in args.extra:
-        log.error("O completo apaga a produção da apresentação %s no SISAIH01 antes de importar. "
-                  "Repita com --confirmar.", resto[0])
+        log.error("O completo apaga a produção da competência %s no SISAIH01 antes de importar. "
+                  "Repita com --confirmar.", comp)
         return 2
-    apres, arquivo = resto[0], resto[1:]
+    # antes de mexer na VM: a versão instalada precisa ser a dessa competência
+    estado = ler_estado()
+    instalada = estado.get("instalado", {}).get("SISAIH01")
+    da_instalada = estado.get("apresentacao_por_versao", {}).get("SISAIH01", {}).get(str(instalada))
+    if da_instalada and da_instalada != apres_de(comp):
+        log.error("O SISAIH01 instalado na VM (versão %s) é da competência %s, não da %s. "
+                  "Instale a versão certa: robo.bat instalar SISAIH01 --competencia %s "
+                  "(ou rode o job com a etapa \"atualizar\").", instalada, comp_de(da_instalada), comp, comp)
+        return 1
     flags = [a for a in args.extra if a in ("--confirmar", "--sem-snapshot")]
-    etapas = [("abrir", ["abrir", apres]),
-              ("excluir", ["excluir", apres] + flags),
+    etapas = [("abrir", ["abrir", comp]),
+              ("excluir", ["excluir", comp] + flags),
               ("importar", ["importar"] + arquivo),
               ("consistir", ["consistir"]),
               ("apurar", ["apurar"]),
@@ -1063,7 +1202,8 @@ def sisaih01_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
         if cod != 0:
             log.error("PAROU na etapa %s.", nome)
             return cod
-    log.info("SISAIH01 concluído: produção %s importada, consistida, apurada e exportada para o SIHD.", apres)
+    log.info("SISAIH01 concluído: produção da competência %s importada, consistida, apurada e exportada "
+             "para o SIHD.", comp)
     return 0
 
 
@@ -1073,15 +1213,17 @@ def cmd_sisaih01(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
     sessao = sessao_sisaih01()
     if acao in ("excluir", "importar", "consistir", "apurar", "exportar"):
         if not sessao:
-            log.error("Não sei em que apresentação o SISAIH01 está aberto. Rode antes: robo.bat sisaih01 abrir MM/AAAA")
+            log.error("Não sei em que competência o SISAIH01 está aberto. Rode antes: robo.bat sisaih01 abrir MM/AAAA")
             return 2
-        log.info("SISAIH01 aberto na apresentação %s", sessao)
+        log.info("SISAIH01 aberto na competência %s", comp_de(sessao))
     if acao == "excluir":
-        if not resto or resto[0] != sessao:
-            log.error("Informe a apresentação a excluir, igual à aberta: robo.bat sisaih01 excluir %s --confirmar", sessao)
+        if not resto or not competencia_valida(resto[0]) or apres_de(resto[0]) != sessao:
+            log.error("Informe a competência a excluir, igual à aberta: robo.bat sisaih01 excluir %s --confirmar",
+                      comp_de(sessao))
             return 2
         if "--confirmar" not in args.extra:
-            log.error("A exclusão apaga a produção da apresentação %s no SISAIH01. Repita com --confirmar.", sessao)
+            log.error("A exclusão apaga a produção da competência %s no SISAIH01. Repita com --confirmar.",
+                      comp_de(sessao))
             return 2
         prefixo = f"antes_excluir_{sessao[3:]}{sessao[:2]}_"
         if "--sem-snapshot" in args.extra:
@@ -1094,7 +1236,7 @@ def cmd_sisaih01(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
         else:
             try:
                 tirar_snapshot(vbox, f"{prefixo}{dt.datetime.now():%Y%m%d_%H%M}",
-                               f"AutoSUS - antes de excluir a produção {sessao} no SISAIH01")
+                               f"AutoSUS - antes de excluir a produção da competência {comp_de(sessao)} no SISAIH01")
             except RuntimeError as e:
                 log.error("Snapshot não criado, exclusão cancelada: %s", e)
                 return 1
@@ -1124,10 +1266,11 @@ def cmd_sisaih01(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
         except ValueError as e:
             log.error("%s", e)
             return 1
-        log.info("Arquivo %s: %d AIH, apresentação %s", arquivo.name, info["aihs"], ", ".join(info["apresentacoes"]))
+        comps = ", ".join(comp_de(a) for a in info["apresentacoes"])
+        log.info("Arquivo %s: %d AIH, competência %s", arquivo.name, info["aihs"], comps)
         if info["apresentacoes"] != [sessao]:
-            log.error("O arquivo é da apresentação %s e o SISAIH01 está aberto em %s: o SISAIH01 gravaria "
-                      "a produção em outra apresentação. Nada foi feito.", ", ".join(info["apresentacoes"]), sessao)
+            log.error("O arquivo é da competência %s e o SISAIH01 está aberto na %s: o SISAIH01 gravaria "
+                      "a produção em outra competência. Nada foi feito.", comps, comp_de(sessao))
             return 1
         entrada = fila.raiz / "entrada"
         entrada.mkdir(exist_ok=True)
@@ -1171,11 +1314,11 @@ def cmd_sisaih01(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
                   "apurar, exportar, completo)", acao)
         return 2
     apresentacao = None
-    if len(args.extra) > 1:                      # robo.bat sisaih01 abrir 09/2026
-        apresentacao = args.extra[1]
-        if not re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", apresentacao):
-            log.error("Apresentação inválida: %s (use MM/AAAA)", apresentacao)
+    if len(args.extra) > 1:                      # robo.bat sisaih01 abrir 08/2026 (competência)
+        if not competencia_valida(args.extra[1]):
+            log.error("Competência inválida: %s (use MM/AAAA)", args.extra[1])
             return 2
+        apresentacao = apres_de(args.extra[1])   # o login do SISAIH01 pede a apresentação
     cred = credenciais("SISAIH01", "mestre", "mestre")
     resp = executar(fila, vbox, pasta_logs, "sisaih01_abrir", 1200, "sisaih01",
                     executavel=cfg["programas"]["SISAIH01"]["executavel"], apresentacao=apresentacao, **cred)
@@ -1193,7 +1336,7 @@ def cmd_sisaih01(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
             if versao:
                 estado["apresentacao_por_versao"].setdefault("SISAIH01", {})[versao] = apv
                 gravar_estado(estado)
-                log.info("SISAIH01 versão %s = apresentação %s (registrado em %s)", versao, apv, ESTADO.name)
+                log.info("SISAIH01 versão %s = competência %s (registrado em %s)", versao, comp_de(apv), ESTADO.name)
     return 0 if resp and resp.get("ok") else 1
 
 
@@ -1283,12 +1426,12 @@ def cmd_versoes(cfg, vbox, fila, pasta_logs, args) -> int:
     origem = pasta_downloads(cfg) / "programas"
     estado = ler_estado()
     for nome, prog in cfg["programas"].items():
-        conhecidas = estado["apresentacao_por_versao"].get(nome, {})
+        conhecidas = {v: comp_de(a) for v, a in estado["apresentacao_por_versao"].get(nome, {}).items()}
         lista = instaladores(origem, prog["padrao"])
         log.info("%s (instalada na VM: %s):", nome, estado["instalado"].get(nome, "?"))
         for versao, arq in lista:
             data = dt.datetime.fromtimestamp(arq.stat().st_mtime).strftime("%d/%m/%Y")
-            log.info("    %s  baixado em %s  apresentação %s", arq.name, data, conhecidas.get(str(versao), "?"))
+            log.info("    %s  baixado em %s  competência %s", arq.name, data, conhecidas.get(str(versao), "?"))
         if not lista:
             log.info("    nenhum instalador em %s", origem)
     return 0
