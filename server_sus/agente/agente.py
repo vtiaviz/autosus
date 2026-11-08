@@ -22,7 +22,7 @@ import threading
 import time
 import traceback
 
-VERSAO = "1.22.8"
+VERSAO = "1.22.9"
 COMPARTILHAMENTO = os.environ.get("AUTOSUS_COMPARTILHAMENTO", "AIH")
 RAIZ = os.environ.get("AUTOSUS_RAIZ", r"\\VBOXSVR\%s\_robo" % COMPARTILHAMENTO)
 INTERVALO = 3          # segundos entre verificações da fila
@@ -428,7 +428,7 @@ def fechar_sisaih01(principal, limite=60):
     return _fechar_programa(principal, r"(sair|encerrar|finalizar|fechar)", limite)
 
 
-def _fechar_programa(principal, padrao_sair, limite=60):
+def _fechar_programa(principal, padrao_sair, limite=60, nome="SISAIH01"):
     pid = principal.process_id()
     principal.close()
     eventos = []
@@ -436,11 +436,11 @@ def _fechar_programa(principal, padrao_sair, limite=60):
     while time.time() < fim:
         vivas = [w for w in janelas_handles().values() if w.process_id() == pid]
         if not vivas:
-            return "SISAIH01 que já estava aberto foi fechado" + (" (%s)" % "; ".join(eventos) if eventos else "")
+            return "%s que já estava aberto foi fechado" % nome + (" (%s)" % "; ".join(eventos) if eventos else "")
         for d in dialogos_abertos(pid):
             tratar_dialogo(d, [(padrao_sair, "Sim")], eventos)
         time.sleep(1)
-    raise RuntimeError("o SISAIH01 aberto não fechou (%s)" % "; ".join(eventos))
+    raise RuntimeError("o %s aberto não fechou (%s)" % (nome, "; ".join(eventos)))
 
 
 def tarefa_sisaih01_abrir(p, pasta_res):
@@ -1865,6 +1865,37 @@ def tarefa_fpo_exportar(p, pasta_res):
     return operacao_fpo("exportar", p, pasta_res, corpo)
 
 
+def tarefa_fechar_programa(p, pasta_res):
+    """Fecha um programa do SUS quando o robô termina de usá-lo (SISAIH01, FPO ou SIHD2): telas abertas
+    são fechadas sem executar e só perguntas de saída são confirmadas."""
+    preparar_pywin32()
+    from pywinauto import Desktop
+    programa = p["programa"]
+    if programa == "FPO":
+        return tarefa_fpo_fechar(p, pasta_res)
+    saida = r"(sair|encerrar|finalizar|fechar)"
+    if programa == "SISAIH01":
+        janelas = [w for w in Desktop(backend="win32").windows(visible_only=True)
+                   if w.window_text().startswith(("SISAIH01 - Programa", "SISAIH01 - Autentica"))]
+        if not janelas:
+            return {"ok": True, "dados": {"eventos": ["o SISAIH01 não estava aberto"]}}
+        return {"ok": True, "dados": {"eventos": [_fechar_programa(janelas[0], saida, nome="SISAIH01")]}}
+    if programa == "SIHD2":
+        exe = achar_executavel(p["executavel"])
+        pid = pid_do_executavel(exe) if exe else None
+        if not pid:
+            return {"ok": True, "dados": {"eventos": ["o SIHD2 não estava aberto"]}}
+        janelas = janelas_do_processo(pid)
+        principal = sihd_principal(pid) or (janelas[0] if janelas else None)
+        for w in janelas:                                   # telas abertas além da principal: fecha sem executar
+            if principal is None or w.handle != principal.handle:
+                fechar_sem_executar(w)
+        if principal is None:
+            return {"ok": True, "dados": {"eventos": ["o SIHD2 não tinha janela aberta"]}}
+        return {"ok": True, "dados": {"eventos": [_fechar_programa(principal, saida, nome="SIHD2")]}}
+    raise RuntimeError("programa desconhecido: %r" % programa)
+
+
 def tarefa_fpo_fechar(p, pasta_res):
     """Fecha o FPO (antes de instalar a atualização). Só confirma perguntas de saída."""
     preparar_pywin32()
@@ -1878,7 +1909,7 @@ def tarefa_fpo_fechar(p, pasta_res):
             fechar_sem_executar(w)
     principal = fpo_principal(pid)
     if principal is not None:
-        eventos.append(_fechar_programa(principal, r"(sair|encerrar|finalizar|fechar)").replace("SISAIH01", "FPO"))
+        eventos.append(_fechar_programa(principal, r"(sair|encerrar|finalizar|fechar)", nome="FPO"))
     return {"ok": True, "dados": {"eventos": eventos}}
 
 
@@ -3477,6 +3508,7 @@ TAREFAS = {"ping": lambda p, pasta: tarefa_ping(p), "resolucao": tarefa_resoluca
            "transmissor_botao": tarefa_transmissor_botao,
            "fpo_abrir": tarefa_fpo_abrir,
            "fpo_fechar": tarefa_fpo_fechar,
+           "fechar_programa": tarefa_fechar_programa,
            "sihd_abrir": tarefa_sihd_abrir,
            "sihd_competencia": tarefa_sihd_competencia,
            "sihd_mapear_telas": tarefa_sihd_mapear_telas,

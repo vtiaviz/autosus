@@ -487,6 +487,9 @@ def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
     if not fila.agente_vivo():
         log.error("Agente sem sinal. Rode 'robo.bat iniciar'.")
         return 1
+    # instalar por cima de um programa aberto falha ou deixa a instalação pela metade
+    for nome in [i["programa"] for i in itens if i["programa"] in PROGRAMAS_SUS]:
+        fechar_programa(cfg, vbox, fila, pasta_logs, nome)
     limite = int(cfg["tempo_limite"]["instalacao_segundos"])
     id_ = fila.pedir("instalar", itens=itens, tempo_limite=limite)
     r = fila.esperar(id_, limite * len(itens) + 120)
@@ -1065,6 +1068,7 @@ def sihd_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
              "liberação AUTOMÁTICA" if modo == "auto" else "liberação MANUAL (para e lista)",
              "sim (--confirmar)" if "--confirmar" in extra else "não (para antes)", ", ".join(etapas))
     sub = lambda e: argparse.Namespace(**{**vars(args), "extra": e})
+    fechar_abertos(cfg, vbox, fila, pasta_logs)
     if "--sem-snapshot" not in extra and inicio_em == ETAPAS_SIHD[0]:
         try:
             tirar_snapshot(vbox, f"antes_sihd_{ano}{mes:02d}_{dt.datetime.now():%Y%m%d_%H%M}",
@@ -1132,6 +1136,7 @@ def sihd_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
         if cod != 0:
             log.error("PAROU na etapa %s. Depois de resolver, continue com:\n  %s", etapa, retomar(etapa))
             return cod
+    fechar_programa(cfg, vbox, fila, pasta_logs, "SIHD2")
     log.info("SIHD concluído: competência %s encerrada; .DTS em saida/. Próximo: robo.bat transmissor preparar %s",
              comp_txt, comp_txt)
     return 0
@@ -1142,6 +1147,7 @@ def fpo_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args, mes: int, an
     3) competência 4) importar SIA 5) importar TXT do SCNES e Terceiros Brasil 6) valores vigentes 7) exportar."""
     comp_txt = f"{mes:02d}/{ano}"
     sub = lambda extra: argparse.Namespace(**{**vars(args), "extra": extra})
+    fechar_abertos(cfg, vbox, fila, pasta_logs)
     if "--sem-snapshot" not in args.extra:
         try:
             tirar_snapshot(vbox, f"antes_fpo_{ano}{mes:02d}_{dt.datetime.now():%Y%m%d_%H%M}",
@@ -1174,8 +1180,32 @@ def fpo_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args, mes: int, an
         if cod != 0:
             log.error("PAROU na etapa %s.", nome)
             return cod
+    fechar_programa(cfg, vbox, fila, pasta_logs, "FPO")
     log.info("FPO concluído: competência %s, Valores_%d%02d.VTP gerado.", comp_txt, ano, mes)
     return 0
+
+
+def fechar_programa(cfg, vbox: "VBox", fila: "Fila", pasta_logs, nome: str) -> None:
+    """Fecha o programa do SUS quando o robô termina de usá-lo, para não deixar todos abertos na VM.
+    Se não fechar, só avisa: o trabalho do programa já terminou."""
+    log.info("========== %s: fechar ==========", nome)
+    resp = executar(fila, vbox, pasta_logs, "fechar_programa", 180, f"fechar_{nome.lower()}",
+                    programa=nome, executavel=cfg["programas"][nome]["executavel"])
+    if not resp or not resp.get("ok"):
+        log.warning("%s não fechou sozinho: %s", nome, (resp or {}).get("erro") or "sem resposta do agente")
+        return
+    for e in resp.get("dados", {}).get("eventos", []):
+        log.info("  - %s", e)
+
+
+PROGRAMAS_SUS = ("SISAIH01", "FPO", "SIHD2")
+
+
+def fechar_abertos(cfg, vbox: "VBox", fila: "Fila", pasta_logs) -> None:
+    """Antes de começar um programa (ou de instalar), fecha os programas do SUS que estiverem abertos na VM."""
+    log.info("Fechando os programas do SUS que estiverem abertos na VM...")
+    for nome in PROGRAMAS_SUS:
+        fechar_programa(cfg, vbox, fila, pasta_logs, nome)
 
 
 def sisaih01_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
@@ -1199,6 +1229,7 @@ def sisaih01_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
                   "Instale a versão certa: robo.bat instalar SISAIH01 --competencia %s "
                   "(ou rode o job com a etapa \"atualizar\").", instalada, comp_de(da_instalada), comp, comp)
         return 1
+    fechar_abertos(cfg, vbox, fila, pasta_logs)
     flags = [a for a in args.extra if a in ("--confirmar", "--sem-snapshot")]
     etapas = [("abrir", ["abrir", comp]),
               ("excluir", ["excluir", comp] + flags),
@@ -1222,6 +1253,7 @@ def sisaih01_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
         if cod != 0:
             log.error("PAROU na etapa %s.", nome)
             return cod
+    fechar_programa(cfg, vbox, fila, pasta_logs, "SISAIH01")
     log.info("SISAIH01 concluído: produção da competência %s importada, consistida, apurada e exportada "
              "para o SIHD.", comp)
     return 0
