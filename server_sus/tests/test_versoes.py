@@ -49,3 +49,11 @@ def test_atualizar_instala_o_sisaih01_da_apresentacao():
 def test_competencia_e_apresentacao_do_sisaih01():
     assert robo.apres_de("09/2026") == "10/2026" and robo.apres_de("12/2026") == "01/2027"
     assert robo.comp_de("10/2026") == "09/2026" and robo.comp_de("01/2027") == "12/2026"
+
+
+def test_resultado_da_critica_lido_da_tela():
+    texto = ("Criticar AIH\nForma de Processamento : NORMAL\nQtd total de AlHs a processar: 60\n"
+             "Percentual de Rejeição: 0.00 %\n")
+    assert robo.resultado_critica(texto) == {"aihs": 60, "rejeicao": 0.0, "forma": "NORMAL"}
+    assert robo.resultado_critica("Percentual de Rejeição: 3,45 %")["rejeicao"] == 3.45
+    assert robo.resultado_critica("tela sem o rótulo")["rejeicao"] is None
