@@ -21,7 +21,7 @@ robo.bat iniciar                liga a VM e espera o agente
 robo.bat ping                   testa o agente
 robo.bat snapshot [nome]        snapshot da VM (padrão antes_AAAAMMDD_HHMM)
 robo.bat instalar SISAIH01      instala sem telas a maior versão baixada pelo AutoSUS
-robo.bat instalar SISAIH01 --apresentacao 10/2026   a versão dessa apresentação (cada versão do SISAIH01 abre uma só;
+robo.bat instalar SISAIH01 --competencia 09/2026   a versão mais nova dessa competência (cada versão do SISAIH01 processa uma só;
                                 lê o sisaih01_leiame.txt no FTP do DATASUS e baixa a versão que faltar)
 robo.bat instalar SIHD2
 robo.bat resolucao [1366x768]   fixa a resolução da VM (também é aplicada no "iniciar")
@@ -76,8 +76,8 @@ Um job é uma lista de etapas, executadas uma por vez, cada uma pelo próprio `r
 | Etapa | Comandos do robô |
 | --- | --- |
 | `iniciar` | `iniciar`, `preparar` |
-| `atualizar` | `instalar --apresentacao <apresentação>` (maior versão baixada de cada programa; do SISAIH01, a da apresentação do job) |
-| `sisaih01` | `sisaih01 completo <apresentação> --confirmar` |
+| `atualizar` | `instalar --competencia <competência>` (maior versão baixada de cada programa; do SISAIH01, a mais nova da competência do job) |
+| `sisaih01` | `sisaih01 completo <competência> --confirmar` |
 | `fpo` | `fpo completo <competência>` |
 | `sihd` | `sihd completo <competência> --confirmar --auto` (ou `--manual` com `"sihd_manual": true`) |
 | `transmissor_testar` | `transmissor preparar <competência>`, `transmissor testar` (não transmite) |

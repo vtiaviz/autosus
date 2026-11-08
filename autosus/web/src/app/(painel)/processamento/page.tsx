@@ -206,7 +206,7 @@ function Pagina() {
       <div className="pagina-cabecalho">
         <div>
           <h3>Processamento AIH da competência {rotuloCompetencia(aaaamm)}</h3>
-          <p>Apresentação {painel ? rotuloCompetencia(painel.apresentacao) : '-'} · tudo roda no Server_SUS, um processamento por vez</p>
+          <p>Tudo roda no Server_SUS, um processamento por vez</p>
         </div>
         <select className="seletor-competencia" value={aaaamm} onChange={(e) => setAaaamm(e.target.value)} aria-label="Competência">
           {opcoes.map((c) => <option key={c} value={c}>{rotuloCompetencia(c)}</option>)}
@@ -346,7 +346,7 @@ function Pagina() {
 
         <div className="cad-card">
           <div className="cad-card-head">
-            <h5><span className="material-symbols-outlined">output</span> Arquivos gerados (apresentação {painel ? rotuloCompetencia(painel.apresentacao) : '-'})</h5>
+            <h5><span className="material-symbols-outlined">output</span> Arquivos gerados (competência {rotuloCompetencia(aaaamm)})</h5>
           </div>
           <table className="sus-table">
             <thead><tr><th>Arquivo</th><th>Gerado em</th><th>Tamanho</th></tr></thead>

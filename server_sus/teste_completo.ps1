@@ -1,6 +1,6 @@
 ﻿<#
   Teste completo do robô: arquivos já baixados (AutoSUS + WebAIH) -> SISAIH01 -> FPO -> SIHD -> Transmissor (só Testar Conexão).
-  Padrão: competência 08/2026, apresentação 09/2026, SISAIH01 2520, SIHD2 2340.
+  Padrão: competência 08/2026, SISAIH01 2520, SIHD2 2340.
 
   Uso (pela pasta C:\AutoSUS\processamento):
     .\teste_completo.bat                              tudo, AIHs bloqueadas liberadas automaticamente (--auto)
@@ -91,7 +91,7 @@ $sufixo = ""
 if ($Manual) { $sufixo += " -Manual" }
 if ($Pasta) { $sufixo += ' -Pasta "' + $Pasta + '"' }
 
-Titulo "TESTE COMPLETO - competência $Competencia, apresentação $apresTxt | AIHs bloqueadas: $(if ($Manual) {'MANUAL'} else {'AUTOMÁTICA'}) | etapas: $($rodar -join ', ')"
+Titulo "TESTE COMPLETO - competência $Competencia | AIHs bloqueadas: $(if ($Manual) {'MANUAL'} else {'AUTOMÁTICA'}) | etapas: $($rodar -join ', ')"
 
 # ---------------------------------------------------------------- 0. preparação
 if ($rodar -contains "preparacao") {
@@ -158,8 +158,8 @@ if ($rodar -contains "arquivos") {
 
 # ---------------------------------------------------------------- 2. SISAIH01
 if ($rodar -contains "sisaih01") {
-    Titulo "2. SISAIH01 (apresentação $apresTxt)"
-    Robo "sisaih01" @("sisaih01", "completo", $apresTxt, "--confirmar", "--sem-snapshot")
+    Titulo "2. SISAIH01 (competência $Competencia)"
+    Robo "sisaih01" @("sisaih01", "completo", $Competencia, "--confirmar", "--sem-snapshot")
 }
 
 # ---------------------------------------------------------------- 3. FPO

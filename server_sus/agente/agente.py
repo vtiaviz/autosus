@@ -22,7 +22,7 @@ import threading
 import time
 import traceback
 
-VERSAO = "1.22.6"
+VERSAO = "1.22.7"
 COMPARTILHAMENTO = os.environ.get("AUTOSUS_COMPARTILHAMENTO", "AIH")
 RAIZ = os.environ.get("AUTOSUS_RAIZ", r"\\VBOXSVR\%s\_robo" % COMPARTILHAMENTO)
 INTERVALO = 3          # segundos entre verificações da fila
@@ -355,6 +355,14 @@ def preencher_campo(controle, valor, senha=False):
                            "" if senha else controle.window_text()))
 
 
+def comp_de(apres):
+    """Apresentação MM/AAAA do SISAIH01 (o que vai no login) -> competência MM/AAAA, que é o que o usuário usa."""
+    if not re.fullmatch(r"(0[1-9]|1[0-2])/\d{4}", (apres or "").strip()):
+        return apres                                 # campo vazio ou fora do padrão: mostra como veio
+    mm, aaaa = int(apres[:2]), int(apres[3:7])
+    return "12/%d" % (aaaa - 1) if mm == 1 else "%02d/%d" % (mm - 1, aaaa)
+
+
 class ErroVersao(RuntimeError):
     def __init__(self, msg, apresentacao_da_versao):
         RuntimeError.__init__(self, msg)
@@ -373,8 +381,9 @@ def preencher_login(login, usuario, senha, apresentacao=None):
     # A apresentação que o SISAIH01 sugere é a da versão instalada (ex.: versão de outubro -> 11/2026).
     # Se o arquivo for de outra apresentação, a versão instalada é a errada: para aqui.
     if apresentacao and da_versao and da_versao != apresentacao:
-        raise ErroVersao("a versão instalada do SISAIH01 é da apresentação %s, mas foi pedida %s: "
-                         "instale a versão do SISAIH01 dessa apresentação" % (da_versao, apresentacao), da_versao)
+        raise ErroVersao("a versão instalada do SISAIH01 é da competência %s, mas foi pedida a %s: "
+                         "instale a versão do SISAIH01 dessa competência" % (comp_de(da_versao), comp_de(apresentacao)),
+                         da_versao)
     preencher_campo(campo_usuario, usuario)
     preencher_campo(campo_senha, senha, senha=True)
     if apresentacao:                             # MM/AAAA: tem de ser a mesma apresentação do arquivo
@@ -466,7 +475,8 @@ def tarefa_sisaih01_abrir(p, pasta_res):
             apresentacao_da_versao = e.apresentacao_da_versao
             raise
         apresentacao_da_versao = da_versao
-        passos.append("apresentação da versão instalada: %s | usada no login: %s" % (da_versao, apres))
+        passos.append("competência da versão instalada: %s | usada no login: %s"
+                      % (comp_de(da_versao) if da_versao else "?", comp_de(apres) if apres else "?"))
         login.child_window(title="&Entrar", class_name="TBitBtn").click()
         passos.append("login enviado")
         # depois do login: janela principal ou atualização do banco (sempre que a versão é nova)
@@ -1067,9 +1077,10 @@ def tarefa_sisaih01_excluir(p, pasta_res):
 
     def corpo(janela, pid, eventos, arquivos):
         na_tela = apresentacao_na_tela(janela)
-        eventos.append("apresentação na barra de status: %s" % (", ".join(na_tela) or "não mostrada"))
+        eventos.append("competência na barra de status: %s" % (", ".join(comp_de(a) for a in na_tela) or "não mostrada"))
         if na_tela and apresentacao not in na_tela:
-            raise RuntimeError("o SISAIH01 está aberto na apresentação %s, e não %s" % (na_tela, apresentacao))
+            raise RuntimeError("o SISAIH01 está aberto na competência %s, e não na %s"
+                               % (", ".join(comp_de(a) for a in na_tela), comp_de(apresentacao)))
         tela = abrir_tela(janela, "MANUTENÇÃO", ["EXCLUIR PRODUÇÃO"], "TFrmExcluirProducao")
         campo = tela.descendants(class_name="TMaskEdit")[0]
         campo.set_focus()
@@ -1078,7 +1089,7 @@ def tarefa_sisaih01_excluir(p, pasta_res):
         lido = campo.window_text()
         if lido != apresentacao:
             raise RuntimeError("o campo de apresentação ficou %r (esperado %s)" % (lido, apresentacao))
-        eventos.append("apresentação digitada: %s" % lido)
+        eventos.append("competência %s digitada" % comp_de(lido))
         clicar_botao(botao(tela, "&Excluir"))
         eventos.append("clicou em Excluir")
         # só confirma pergunta de exclusão que cite a apresentação certa (ou nenhuma)
@@ -1211,7 +1222,7 @@ def _processar_com_historico(acao, menu, caminho_menu, classe, botao, pasta_res,
         clicar_posicao(tela, "Fechar")
         time.sleep(1)
         if re.search(r"n[ãa]o existe aih", historico, re.IGNORECASE):
-            raise RuntimeError("não há produção nesta apresentação (importe o arquivo antes de %s)" % acao)
+            raise RuntimeError("não há produção nesta competência (importe o arquivo antes de %s)" % acao)
         linhas = [l.strip() for l in historico.split("\n") if l.strip()]
         dados = {"historico": [l for l in linhas if not re.search(r"\s(OK)$", l)][-40:]}
         m = re.search(r"Total:\s*(\d+)\s*rejeitadas?\s*de\s*(\d+)", historico, re.IGNORECASE)

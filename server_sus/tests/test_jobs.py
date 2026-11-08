@@ -52,7 +52,7 @@ def saida(tmp_path, monkeypatch):
 
 
 def test_comandos_seguem_o_teste_completo():
-    assert j.comandos("sisaih01", "202608", {}) == [["sisaih01", "completo", "09/2026", "--confirmar"]]
+    assert j.comandos("sisaih01", "202608", {}) == [["sisaih01", "completo", "08/2026", "--confirmar"]]
     assert j.comandos("fpo", "202608", {"sem_snapshot": True}) == [["fpo", "completo", "08/2026", "--sem-snapshot"]]
     assert j.comandos("sihd", "202608", {"versao_sihd": 2340}) == [
         ["sihd", "completo", "08/2026", "--confirmar", "--auto", "--versao", "2340"]]
