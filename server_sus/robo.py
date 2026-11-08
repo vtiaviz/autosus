@@ -317,6 +317,61 @@ def instaladores(origem: Path, padrao: str) -> list[tuple[int, Path]]:
     return sorted((int(m.group("versao")), p) for p in origem.glob("*") if (m := rx.match(p.name)))
 
 
+def ler_leiame_sisaih01(texto: str) -> dict[str, str]:
+    """sisaih01_leiame.txt do DATASUS -> {versão: apresentação}. Cada versão traz
+    'VERSÃO 25.41' e, logo abaixo, 'APRESENTAÇÃO PADRAO NA TELA DE LOGIN DESSA VERSÃO : 11/2026'."""
+    blocos = re.split(r"VERS[ÃA]O\s+(\d{2})\.(\d{2})\b", texto, flags=re.IGNORECASE)
+    versoes = {}
+    for maior, menor, corpo in zip(blocos[1::3], blocos[2::3], blocos[3::3]):
+        m = re.search(r"APRESENTA[ÇC][ÃA]O\s+PADR[ÃA]O\s+NA\s+TELA\s+DE\s+LOGIN.*?:\s*((?:0[1-9]|1[0-2])/\d{4})",
+                      corpo, flags=re.IGNORECASE)
+        if m:
+            versoes.setdefault(maior + menor, m.group(1))     # o leiame vem do mais novo para o mais antigo
+    return versoes
+
+
+def item_sisaih01_ftp(cfg) -> dict:
+    """Onde o downloader do AutoSUS busca o SISAIH01 (autosus/downloads/config.yaml)."""
+    for item in cfg["_autosus"].get("programas") or []:
+        if item["nome"].upper() == "SISAIH01":
+            return item
+    raise RuntimeError("SISAIH01 não está em programas no config.yaml do AutoSUS")
+
+
+def atualizar_versoes_sisaih01(cfg) -> dict[str, str]:
+    """Lê o sisaih01_leiame.txt no FTP do DATASUS e anota a apresentação de cada versão em
+    estado_vm.json. O que o robô já viu na tela de login vale mais que o leiame."""
+    from autosus.fonte_ftp import _com_tentativas
+    item = item_sisaih01_ftp(cfg)
+    partes = []
+
+    def baixar(ftp):
+        ftp.cwd(item["pasta"])
+        ftp.retrbinary("RETR sisaih01_leiame.txt", partes.append)
+
+    _com_tentativas(item["host"], {**(cfg["_autosus"].get("ftp") or {}), "tentativas": 2}, baixar)
+    do_leiame = ler_leiame_sisaih01(b"".join(partes).decode("cp1252", errors="replace"))
+    if not do_leiame:
+        raise RuntimeError("sisaih01_leiame.txt sem versões reconhecíveis")
+    estado = ler_estado()
+    conhecidas = estado.setdefault("apresentacao_por_versao", {}).setdefault("SISAIH01", {})
+    for versao, apres in do_leiame.items():
+        conhecidas.setdefault(versao, apres)
+    gravar_estado(estado)
+    return do_leiame
+
+
+def baixar_sisaih01(cfg, versao: str) -> bool:
+    """Baixa sisaih01_ver<versao>.exe do FTP para a pasta de programas do AutoSUS (o mesmo do --versao)."""
+    from autosus.fonte_ftp import verificar_programa
+    from autosus.manifesto import Manifesto
+    pasta = pasta_downloads(cfg) / "programas"
+    r = verificar_programa(item_sisaih01_ftp(cfg), pasta, Manifesto(pasta / "manifesto.json"),
+                           cfg["_autosus"].get("ftp") or {}, False, versao)
+    log.info("SISAIH01 %s: %s %s", versao, r.status, r.detalhe or r.arquivo or "")
+    return r.status in ("baixado", "ja_existe")
+
+
 def versao_sisaih01_para(lista: list[tuple[int, Path]], apres: str) -> list[tuple[int, Path]]:
     """Instaladores do SISAIH01 que servem para a apresentação MM/AAAA.
 
@@ -368,7 +423,21 @@ def cmd_instalar(cfg, vbox: VBox, fila: Fila, pasta_logs, args) -> int:
         if versao:
             lista = [x for x in lista if x[0] == versao]
         elif apres and nome == "SISAIH01":
+            try:
+                do_leiame = atualizar_versoes_sisaih01(cfg)
+            except Exception as e:                   # sem FTP: segue com as versões já conhecidas
+                log.warning("SISAIH01: não consegui ler o sisaih01_leiame.txt no FTP (%s)", e)
+                do_leiame = {}
             conhecidas = ler_estado().get("apresentacao_por_versao", {}).get("SISAIH01", {})
+            baixadas = {str(v) for v, _ in lista}
+            # a maior versão dessa apresentação no leiame (ex.: 2531 para 10/2026); baixa se faltar
+            certas = sorted((v for v, a in conhecidas.items() if a == apres and v in do_leiame), key=int)
+            if certas and certas[-1] not in baixadas:
+                log.info("SISAIH01: a versão da apresentação %s é a %s; baixando do FTP do DATASUS...", apres, certas[-1])
+                if baixar_sisaih01(cfg, certas[-1]):
+                    lista = instaladores(origem, prog["padrao"])
+                    if pasta_extra:
+                        lista = sorted(lista + instaladores(pasta_extra, prog["padrao"]))
             servem = versao_sisaih01_para(lista, apres)
             if not servem:
                 # não instala a mais nova no lugar: o sisaih01 completo para logo, com a mesma explicação

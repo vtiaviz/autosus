@@ -25,6 +25,22 @@ def test_sem_versao_conhecida_tenta_as_nunca_abertas(monkeypatch):
     assert robo.versao_sisaih01_para(LISTA, "10/2026") == []
 
 
+LEIAME = """
+                    VERSÃO 25.41 -  NÃO OBRIGATÓRIA
+        APRESENTAÇÃO PADRAO NA TELA DE LOGIN DESSA VERSÃO : 11/2026.
+        COMPETÊNCIA : 10/2026
+                    VERSÃO 25.31 -  OBRIGATÓRIA
+        APRESENTAÇÃO PADRAO NA TELA DE LOGIN DESSA VERSÃO : 10/2026.
+        COMPETÊNCIA : 09/2026
+                    VERSÃO 25.30
+        APRESENTAÇÃO PADRAO NA TELA DE LOGIN DESSA VERSÃO : 10/2026.
+"""
+
+
+def test_leiame_do_datasus():
+    assert robo.ler_leiame_sisaih01(LEIAME) == {"2541": "11/2026", "2531": "10/2026", "2530": "10/2026"}
+
+
 def test_atualizar_instala_o_sisaih01_da_apresentacao():
     assert j.comandos("atualizar", "202609", {}) == [["instalar", "--apresentacao", "10/2026"]]
     assert j.comandos("sisaih01", "202609", {})[0][:3] == ["sisaih01", "completo", "10/2026"]
