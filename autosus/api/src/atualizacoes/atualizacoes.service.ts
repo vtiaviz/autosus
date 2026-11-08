@@ -40,7 +40,7 @@ const LINHAS_GUARDADAS = 200;
 export class AtualizacoesService implements OnApplicationBootstrap {
   private readonly log = new Logger('Atualizacoes');
   readonly pastaDownloads: string;
-  private readonly python: string;
+  readonly python: string;
   private emAndamento: { aaaamm: string; execucao: number } | null = null;
 
   constructor(
@@ -117,6 +117,21 @@ export class AtualizacoesService implements OnApplicationBootstrap {
     return true;
   }
 
+  /** Onde o downloader guarda os arquivos (config.yaml > pasta_destino), como ele mesmo informou. */
+  async pastaDestino(aaaamm: string): Promise<string> {
+    const pasta = join(this.pastaDownloads, 'estado');
+    if (!existsSync(pasta)) return '';
+    const outros = (await readdir(pasta)).filter((n) => /^\d{6}\.json$/.test(n)).sort().reverse();
+    // o da própria competência; senão, o de qualquer execução (a pasta é a mesma para todas)
+    for (const nome of [`${aaaamm}.json`, ...outros]) {
+      const arq = join(pasta, nome);
+      if (!existsSync(arq)) continue;
+      const estado = JSON.parse(await readFile(arq, 'utf-8')) as EstadoDownloader;
+      if (estado.pasta) return estado.pasta;
+    }
+    return '';
+  }
+
   async obter(aaaamm: string) {
     await this.importar(aaaamm);
     const itens = await this.prisma.itemAtualizacao.findMany({
@@ -130,7 +145,7 @@ export class AtualizacoesService implements OnApplicationBootstrap {
     const lista = itens.map((i) => ({ ...i, tamanho: Number(i.tamanho) }));
     return {
       aaaamm,
-      pasta: this.pastaDownloads,
+      pasta: await this.pastaDestino(aaaamm),
       verificadoEm: itens.reduce<Date | null>(
         (max, i) => (!max || i.verificadoEm > max ? i.verificadoEm : max),
         null,
@@ -142,6 +157,19 @@ export class AtualizacoesService implements OnApplicationBootstrap {
         emAndamento: this.emAndamento?.execucao === execucao.id,
       },
     };
+  }
+
+  /** Aviso pelo Windows e por e-mail, com a mesma configuração do downloader (config.yaml e .env dele). */
+  avisar(titulo: string, texto: string): Promise<boolean> {
+    return new Promise((ok) => {
+      const proc = spawn(this.python, ['-m', 'autosus', '--avisar', titulo, texto], {
+        cwd: this.pastaDownloads,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        windowsHide: true,
+      });
+      proc.on('error', () => ok(false));
+      proc.on('close', (codigo) => ok(codigo === 0));
+    });
   }
 
   /** Roda o downloader de verdade para a competência (um por vez) e volta na hora. */

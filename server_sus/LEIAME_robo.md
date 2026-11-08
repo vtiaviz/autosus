@@ -56,6 +56,7 @@ POST /jobs               novo processamento (veja abaixo)
 GET  /jobs               últimos jobs
 GET  /jobs/{id}          situação, passo atual, progresso do agente e conferência das saídas
 GET  /jobs/{id}/log?desde=N   saída do robô a partir do byte N (devolve "proximo")
+GET  /jobs/{id}/imagens/{nome}  prints que o robô guardou durante o job (citados no log)
 POST /jobs/{id}/cancelar      tira da fila ou para o job em andamento
 ```
 
@@ -78,6 +79,7 @@ Um job é uma lista de etapas, executadas uma por vez, cada uma pelo próprio `r
 | `fpo` | `fpo completo <competência>` |
 | `sihd` | `sihd completo <competência> --confirmar --auto` (ou `--manual` com `"sihd_manual": true`) |
 | `transmissor_testar` | `transmissor preparar <competência>`, `transmissor testar` (não transmite) |
+| `transmissor_enviar` | `transmissor preparar <competência>`, `transmissor enviar --confirmar` — **transmite de verdade**; só aceita com `"confirmar_envio": true` no pedido |
 | `restaurar:<snapshot>` | `restaurar <snapshot> --confirmar`, `iniciar`, `preparar` |
 
 Exemplo (o mesmo roteiro do `teste_completo.ps1`):

@@ -7,5 +7,6 @@ import { AtualizacoesService } from './atualizacoes.service';
   imports: [CompetenciasModule],
   controllers: [AtualizacoesController],
   providers: [AtualizacoesService],
+  exports: [AtualizacoesService],
 })
 export class AtualizacoesModule {}

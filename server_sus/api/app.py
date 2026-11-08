@@ -118,6 +118,8 @@ class NovoJob(BaseModel):
     versao_sihd: int | None = None
     sihd_a_partir_de: str | None = Field(None, pattern=r"^[a-z_]{1,30}$")
     sem_snapshot: bool = Field(False, description="não tira snapshot antes de SISAIH01, FPO e SIHD")
+    confirmar_envio: bool = Field(False, description="obrigatório (true) para a etapa transmissor_enviar, "
+                                                     "que transmite o .DTS ao DATASUS")
 
 
 class NovoSnapshot(BaseModel):
@@ -343,3 +345,15 @@ def cancelar_job(id_: str) -> dict:
     if not job:
         raise HTTPException(404, "job não encontrado")
     return job
+
+
+@app.get("/jobs/{id_}/imagens/{nome}", dependencies=protegido, response_class=FileResponse)
+def imagem_job(id_: str, nome: str) -> FileResponse:
+    """Um print que o robô guardou durante o job (só os citados no log dele)."""
+    job = jobs.obter(id_)
+    if not job or nome not in job.get("imagens", []):
+        raise HTTPException(404, "imagem não encontrada")
+    arq = PASTA / "logs" / nome
+    if not arq.is_file():
+        raise HTTPException(404, "imagem não existe mais")
+    return FileResponse(arq, media_type="image/png")

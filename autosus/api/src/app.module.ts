@@ -5,6 +5,8 @@ import { AtualizacoesModule } from './atualizacoes/atualizacoes.module';
 import { AuthModule } from './auth/auth.module';
 import { CompetenciasModule } from './competencias/competencias.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProcessamentoModule } from './processamento/processamento.module';
+import { ServidorModule } from './servidor/servidor.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { PrismaModule } from './prisma/prisma.module';
     AuthModule,
     CompetenciasModule,
     AtualizacoesModule,
+    ServidorModule,
+    ProcessamentoModule,
   ],
 })
 export class AppModule {}
