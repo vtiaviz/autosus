@@ -1026,6 +1026,48 @@ ETAPAS_SIHD = ["instalar", "abrir", "competencia", "importar_cnes", "importar_ta
                "bloqueadas", "criticar", "apurar", "encerrar"]
 
 
+def ocr(imagem: Path) -> str:
+    """Texto de uma imagem pelo OCR do próprio Windows (nucleo/ocr.ps1). Vazio se não conseguir."""
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                            str(PASTA / "nucleo" / "ocr.ps1"), "-Imagem", str(Path(imagem).resolve())],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return r.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def resultado_critica(texto: str) -> dict:
+    """Lê do texto da tela 'Criticar AIH' a quantidade de AIHs e o percentual de rejeição.
+    Os rótulos dessa tela são desenhados (TLabel): não existem como controle, só na imagem."""
+    def numero(padrao):
+        m = re.search(padrao, texto, re.IGNORECASE)
+        return float(m.group(1).replace(",", ".")) if m else None
+    qtd = numero(r"Qtd\.?\s+total\s+de\s+A\S*\s+a\s+processar\s*:?\s*(\d+)")
+    return {"aihs": int(qtd) if qtd is not None else None,
+            "rejeicao": numero(r"Percentual\s+de\s+Rejei\S*\s*:?\s*(\d+[.,]\d+|\d+)\s*%"),
+            "forma": (re.search(r"Forma\s+de\s+Processamento\s*:?\s*(\w+)", texto, re.IGNORECASE) or [None, None])[1]}
+
+
+def conferir_critica(pasta_logs: Path, inicio: float) -> tuple[bool, str]:
+    """Mostra o resultado da crítica e diz se dá para seguir (só com 0% de rejeição)."""
+    img = pasta_logs / "sihd_criticar.png"
+    if not img.exists() or img.stat().st_mtime < inicio - 5:
+        return False, "não achei a imagem da tela de crítica para ler o percentual de rejeição"
+    r = resultado_critica(ocr(img))
+    log.info("========== RESULTADO DA CRÍTICA ==========")
+    log.info("  Forma de processamento: %s", r["forma"] or "?")
+    log.info("  AIHs processadas: %s", r["aihs"] if r["aihs"] is not None else "?")
+    if r["rejeicao"] is None:
+        log.info("  Percentual de rejeição: não consegui ler (veja %s)", img)
+        return False, "não consegui ler o percentual de rejeição na tela de crítica"
+    log.info("  Percentual de rejeição: %s %%", f"{r['rejeicao']:.2f}".replace(".", ","))
+    if r["rejeicao"] > 0:
+        return False, f"percentual de rejeição de {r['rejeicao']:.2f}% na crítica (tem de ser 0%)".replace(".", ",", 1)
+    return True, ""
+
+
 def sihd_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
     """SIHD do começo ao fim, parando onde há decisão:
       --manual (padrão): para nas AIHs bloqueadas e lista; você libera com 'sihd liberar' e continua com
@@ -1099,7 +1141,16 @@ def sihd_completo(cfg, vbox: "VBox", fila: "Fila", pasta_logs, args) -> int:
             cod = cmd_sihd(cfg, vbox, fila, pasta_logs, sub(["abrir"]))
         elif etapa in ("competencia", "importar_cnes", "importar_aih"):
             cod = cmd_sihd(cfg, vbox, fila, pasta_logs, sub([etapa, comp_txt] + pasta))
-        elif etapa in ("importar_tabelas", "criticar", "apurar"):
+        elif etapa == "criticar":
+            inicio_critica = time.time()
+            cod = cmd_sihd(cfg, vbox, fila, pasta_logs, sub([etapa]))
+            if cod == 0:
+                ok, motivo = conferir_critica(pasta_logs, inicio_critica)
+                if not ok:
+                    log.error("PAROU: %s. Veja as AIHs rejeitadas no SIHD2 (relatório da crítica), corrija e "
+                              "continue com:\n  %s", motivo, retomar("criticar"))
+                    return 1
+        elif etapa in ("importar_tabelas", "apurar"):
             cod = cmd_sihd(cfg, vbox, fila, pasta_logs, sub([etapa]))
         elif etapa == "bloqueadas":
             resp = executar(fila, vbox, pasta_logs, "sihd_bloqueadas", 3 * 3600 + 900, "sihd_bloqueadas")
